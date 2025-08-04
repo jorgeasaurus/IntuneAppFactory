@@ -1,0 +1,270 @@
+name: Intune App Factory
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+env:
+  # Release tag for custom apps
+  CUSTOM_APPS_RELEASE_TAG: 'custom-apps-latest'
+  # IntuneWinAppUtil download URL
+  INTUNEWINAPPUTIL_URL: 'https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/releases/latest/download/IntuneWinAppUtil.exe'
+
+jobs:
+  # Phase 1: Test and Prepare Environment
+  test_environment:
+    name: Test Environment and Templates
+    runs-on: [self-hosted, Windows]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test Templates Folder
+        shell: pwsh
+        run: |
+          Write-Host "Testing templates folder structure..."
+          .\Scripts\Test-TemplatesFolder.ps1
+
+  # Phase 2: Check for New Application Versions
+  check_apps:
+    name: Check Application Versions
+    runs-on: [self-hosted, Windows]
+    needs: test_environment
+    outputs:
+      apps_to_process: ${{ steps.check_apps.outputs.apps_to_process }}
+      should_continue: ${{ steps.check_apps.outputs.should_continue }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PowerShell Modules
+        shell: pwsh
+        run: |
+          Write-Host "Installing required PowerShell modules..."
+          .\Scripts\Install-Modules-GraphSDK.ps1
+
+      - name: Download IntuneWinAppUtil
+        shell: pwsh
+        run: |
+          $outputPath = "$env:RUNNER_TEMP\IntuneWinAppUtil.exe"
+          Write-Host "Downloading IntuneWinAppUtil.exe..."
+          Invoke-WebRequest -Uri $env:INTUNEWINAPPUTIL_URL -OutFile $outputPath
+          Write-Host "##vso[task.setvariable variable=INTUNEWINAPPUTIL_PATH]$outputPath"
+          # Also set for subsequent jobs
+          echo "INTUNEWINAPPUTIL_PATH=$outputPath" >> $GITHUB_ENV
+
+      - name: Check for New Application Versions
+        id: check_apps
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        run: |
+          Write-Host "Checking for new application versions..."
+          
+          # Import modules
+          Import-Module Microsoft.Graph.Authentication -Force
+          Import-Module Microsoft.Graph.DeviceManagement -Force
+          Import-Module Evergreen -Force
+          
+          # Connect to Graph
+          .\Scripts\Connect-GraphAPI.ps1 -TenantId $env:TENANT_ID -ClientId $env:CLIENT_ID -ClientSecret $env:CLIENT_SECRET
+          
+          # Run application version check
+          $result = .\Scripts\Test-AppList.ps1 -TenantID $env:TENANT_ID -ClientID $env:CLIENT_ID -ClientSecret $env:CLIENT_SECRET
+          
+          # Output results for next job
+          if ($result.AppsToProcess.Count -gt 0) {
+            $appsJson = $result.AppsToProcess | ConvertTo-Json -Compress
+            echo "apps_to_process=$appsJson" >> $GITHUB_OUTPUT
+            echo "should_continue=true" >> $GITHUB_OUTPUT
+            Write-Host "Found $($result.AppsToProcess.Count) applications to process"
+          } else {
+            echo "should_continue=false" >> $GITHUB_OUTPUT
+            Write-Host "No applications need updating"
+          }
+          
+          # Disconnect from Graph
+          Disconnect-MgGraph
+
+  # Phase 3: Package Applications
+  package_apps:
+    name: Package Applications
+    runs-on: [self-hosted, Windows]
+    needs: check_apps
+    if: needs.check_apps.outputs.should_continue == 'true'
+    strategy:
+      matrix:
+        app: ${{ fromJson(needs.check_apps.outputs.apps_to_process) }}
+      max-parallel: 3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download and Prepare Application
+        shell: pwsh
+        env:
+          APP_NAME: ${{ matrix.app.IntuneAppName }}
+          APP_FOLDER: ${{ matrix.app.AppFolderName }}
+        run: |
+          Write-Host "Processing application: $env:APP_NAME"
+          
+          # Create package folder structure
+          .\Scripts\Prepare-AppPackageFolder.ps1 -AppFolderName $env:APP_FOLDER
+          
+          # Download application installer
+          if (${{ matrix.app.AppSource }} -eq "Evergreen") {
+            # Download from Evergreen source
+            .\Scripts\Save-Installer.ps1 -AppFolderName $env:APP_FOLDER -DownloadUrl "${{ matrix.app.DownloadUrl }}"
+          }
+          elseif (${{ matrix.app.AppSource }} -eq "GitHubRelease") {
+            # Download from GitHub Release
+            Write-Host "Downloading from GitHub Release..."
+            # Implementation for GitHub Release downloads
+          }
+
+      - name: Upload Application Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-package-${{ matrix.app.AppFolderName }}
+          path: Apps/${{ matrix.app.AppFolderName }}/Package/
+          retention-days: 1
+
+  # Phase 4: Publish to Intune
+  publish_apps:
+    name: Publish Applications to Intune
+    runs-on: [self-hosted, Windows]
+    needs: [check_apps, package_apps]
+    if: needs.check_apps.outputs.should_continue == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PowerShell Modules
+        shell: pwsh
+        run: |
+          Write-Host "Installing required PowerShell modules..."
+          .\Scripts\Install-Modules-GraphSDK.ps1
+
+      - name: Download All Application Packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: app-package-*
+          path: Apps/
+
+      - name: Create AppsPublishList.json
+        shell: pwsh
+        run: |
+          # Create publish list from checked apps
+          $appsToProcess = '${{ needs.check_apps.outputs.apps_to_process }}' | ConvertFrom-Json
+          $publishList = @()
+          
+          foreach ($app in $appsToProcess) {
+            $publishList += @{
+              IntuneAppName = $app.IntuneAppName
+              IntuneAppNamingConvention = $app.IntuneAppNamingConvention
+              AppPublishFolderPath = Join-Path $PWD "Apps\$($app.AppFolderName)"
+              AppSetupFileName = (Get-ChildItem -Path "Apps\$($app.AppFolderName)\Package\Source" -Filter "*.exe","*.msi" | Select-Object -First 1).Name
+              IconFileName = "Icon.png"
+            }
+          }
+          
+          $publishListPath = "$env:GITHUB_WORKSPACE\AppsPublishList.json"
+          $publishList | ConvertTo-Json -Depth 3 | Out-File -FilePath $publishListPath -Force
+          
+          # Set environment variable for script
+          echo "BUILD_ARTIFACTSTAGINGDIRECTORY=$env:GITHUB_WORKSPACE" >> $GITHUB_ENV
+          echo "BUILD_BINARIESDIRECTORY=$env:RUNNER_TEMP" >> $GITHUB_ENV
+
+      - name: Publish Applications to Intune
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          WORKSPACE_ID: ${{ secrets.LOG_ANALYTICS_WORKSPACE_ID }}
+          SHARED_KEY: ${{ secrets.LOG_ANALYTICS_SHARED_KEY }}
+        run: |
+          Write-Host "Publishing applications to Intune..."
+          
+          # Ensure AppsPublishList path is correct
+          $env:BUILD_ARTIFACTSTAGINGDIRECTORY = Join-Path $env:GITHUB_WORKSPACE "AppsPublishList"
+          New-Item -ItemType Directory -Force -Path $env:BUILD_ARTIFACTSTAGINGDIRECTORY
+          Copy-Item "$env:GITHUB_WORKSPACE\AppsPublishList.json" -Destination $env:BUILD_ARTIFACTSTAGINGDIRECTORY -Force
+          
+          # Run the Graph SDK version of the publish script
+          .\Scripts\New-Win32App-GraphSDK.ps1 `
+            -TenantID $env:TENANT_ID `
+            -ClientID $env:CLIENT_ID `
+            -ClientSecret $env:CLIENT_SECRET `
+            -WorkspaceID $env:WORKSPACE_ID `
+            -SharedKey $env:SHARED_KEY
+
+      - name: Upload AppsAssignList
+        uses: actions/upload-artifact@v4
+        with:
+          name: apps-assign-list
+          path: ${{ env.BUILD_BINARIESDIRECTORY }}/AppsAssignList.json
+          retention-days: 1
+
+  # Phase 5: Assign Applications
+  assign_apps:
+    name: Assign Applications
+    runs-on: [self-hosted, Windows]
+    needs: publish_apps
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PowerShell Modules
+        shell: pwsh
+        run: |
+          Write-Host "Installing required PowerShell modules..."
+          .\Scripts\Install-Modules-GraphSDK.ps1
+
+      - name: Download AppsAssignList
+        uses: actions/download-artifact@v4
+        with:
+          name: apps-assign-list
+          path: ${{ env.BUILD_ARTIFACTSTAGINGDIRECTORY }}/AppsPublishedList
+
+      - name: Assign Applications
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ env.BUILD_ARTIFACTSTAGINGDIRECTORY }}
+        run: |
+          Write-Host "Assigning applications..."
+          
+          # Run the Graph SDK version of the assignment script
+          .\Scripts\New-AppAssignment-GraphSDK.ps1 `
+            -TenantID $env:TENANT_ID `
+            -ClientID $env:CLIENT_ID `
+            -ClientSecret $env:CLIENT_SECRET
+
+  # Cleanup job
+  cleanup:
+    name: Cleanup Artifacts
+    runs-on: [self-hosted, Windows]
+    needs: [publish_apps, assign_apps]
+    if: always()
+    steps:
+      - name: Clean up temporary files
+        shell: pwsh
+        run: |
+          Write-Host "Cleaning up temporary files..."
+          
+          # Clean up downloaded packages
+          if (Test-Path "$env:RUNNER_TEMP\Apps") {
+            Remove-Item -Path "$env:RUNNER_TEMP\Apps" -Recurse -Force
+          }
+          
+          # Clean up IntuneWinAppUtil
+          if (Test-Path "$env:RUNNER_TEMP\IntuneWinAppUtil.exe") {
+            Remove-Item -Path "$env:RUNNER_TEMP\IntuneWinAppUtil.exe" -Force
+          }
