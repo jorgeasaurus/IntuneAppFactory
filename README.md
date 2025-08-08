@@ -1,2 +1,2 @@
 # IntuneAppFactory
-IntuneAppFactory is a set of PowerShell scripts used in an Azure DevOps Pipeline to detect, download, package and publish onboarded applications as a Win32 application to Intune, to ensure the latest version of onboarded applications are available in Intune.
+IntuneAppFactory is a set of PowerShell scripts used to detect, download, package and publish onboarded applications as Win32 applications in Intune. The project now runs using GitHub Actions or locally via PowerShell and no longer depends on Azure Storage. Custom installers can be retrieved from GitHub Releases or direct download URLs and any generated files may be uploaded as workflow artifacts.
