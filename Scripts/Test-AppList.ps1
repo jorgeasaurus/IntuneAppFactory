@@ -236,7 +236,8 @@ Process {
                             continue
                         }
                         $DownloadUrl = "https://github.com/$($App.GitHubRepo)/releases/download/$($App.ReleaseTag)/$($App.SetupFile)"
-                        $FileExt = [System.IO.Path]::GetExtension($App.SetupFile).TrimStart('.')
+                        $FileExtRaw = [System.IO.Path]::GetExtension($App.SetupFile)
+                        $FileExt = if (![string]::IsNullOrEmpty($FileExtRaw)) { $FileExtRaw.TrimStart('.') } else { "" }
                         $AppItem = [PSCustomObject]@{
                             Version = $App.ReleaseTag
                             URI = $DownloadUrl
