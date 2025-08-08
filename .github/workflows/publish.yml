@@ -10,9 +10,9 @@ jobs:
     runs-on: [self-hosted, Windows]
     env:
       BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
-      PIPELINE_WORKSPACE: ${{ env.RUNNER_TEMP }}
-      BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ env.RUNNER_TEMP }}/artifacts
-      BUILD_BINARIESDIRECTORY: ${{ env.RUNNER_TEMP }}/binaries
+      PIPELINE_WORKSPACE: ${{ runner.temp }}
+      BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}/artifacts
+      BUILD_BINARIESDIRECTORY: ${{ runner.temp }}/binaries
     steps:
       - uses: actions/checkout@v4
 
