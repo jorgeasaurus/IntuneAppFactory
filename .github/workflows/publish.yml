@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: [self-hosted, Windows]
+    runs-on: [self-hosted, Windows, windows-build]
     env:
       BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
       PIPELINE_WORKSPACE: ${{ runner.temp }}
