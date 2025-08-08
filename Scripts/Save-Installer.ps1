@@ -208,15 +208,9 @@ Process {
         if ($AppsPrepareList.Count -eq 0) {
             # Don't allow pipeline to continue
             Write-Output -InputObject "No new applications to be prepared, aborting pipeline"
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
-        }
-        else {
-            # Allow pipeline to continue
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]true"
         }
     }
     else {
         Write-Output -InputObject "Failed to locate required $($AppsDownloadListFileName) file in build artifacts staging directory, aborting pipeline"
-        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
     }
 }

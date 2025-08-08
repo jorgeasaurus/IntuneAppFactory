@@ -37,9 +37,7 @@ param (
 
     [parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$ClientSecret,
-
-    
+    [string]$ClientSecret
 )
 Process {
     # Functions
@@ -247,7 +245,10 @@ Process {
                     }
                     "DirectUrl" {
                         Write-Output -InputObject "Using direct download URL"
-                        $FileExtRaw = [System.IO.Path]::GetExtension($App.DownloadUrl)
+
+                        $FileExt = [System.IO.Path]::GetExtension($App.DownloadUrl).TrimStart('.')
+                        $AppItem = [PSCustomObject]@{
+
                             Version = $App.Version
                             URI = $App.DownloadUrl
                             InstallerType = $FileExt
@@ -389,9 +390,8 @@ Process {
                 }
             }
             catch [System.Exception] {
-                Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
                 Write-Warning -Message "Failed to retrieve app source details using method '$($App.AppSource)' for app: $($App.IntuneAppName). Error message: $($_.Exception.Message)"
-                
+
                 # Handle current application output completed message
                 Write-Output -InputObject "[APPLICATION: $($App.IntuneAppName)] - Skipped"
             }
@@ -409,15 +409,9 @@ Process {
         if ($AppsDownloadList.Count -eq 0) {
             # Don't allow pipeline to continue
             Write-Output -InputObject "No new applications to be published, aborting pipeline"
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
-        }
-        else {
-            # Allow pipeline to continue
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]true"
         }
     }
     catch [System.Exception] {
-        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
         throw "$($MyInvocation.MyCommand): Failed to retrieve authentication token with error message: $($_.Exception.Message)"
     }
 }

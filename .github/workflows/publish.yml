@@ -5,6 +5,7 @@ on:
   schedule:
     - cron: '0 */6 * * *'
 
+
 env:
   BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
   PIPELINE_WORKSPACE: ${{ runner.temp }}
@@ -14,6 +15,11 @@ env:
 jobs:
   build:
     runs-on: [self-hosted, Windows]
+    env:
+      BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
+      PIPELINE_WORKSPACE: ${{ runner.temp }}
+      BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}/artifacts
+      BUILD_BINARIESDIRECTORY: ${{ runner.temp }}/binaries
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +54,7 @@ jobs:
       - name: Download Installers
         shell: pwsh
         run: ./Scripts/Save-Installer.ps1
+
 
       - name: Prepare App Package Folders
         shell: pwsh

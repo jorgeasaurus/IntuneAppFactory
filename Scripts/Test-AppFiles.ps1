@@ -194,15 +194,9 @@ Process {
         if ($AppsProcessList.Count -eq 0) {
             # Don't allow pipeline to continue
             Write-Output -InputObject "No applications allowed to be processed, aborting pipeline"
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
-        }
-        else {
-            # Allow pipeline to continue
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]true"
         }
     }
     catch [System.Exception] {
-        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
         throw "$($MyInvocation.MyCommand): Failed to access '$($AppListPath)' with error message: $($_.Exception.Message)"
     }
 }
