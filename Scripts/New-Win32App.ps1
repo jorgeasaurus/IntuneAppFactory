@@ -667,16 +667,13 @@ Process {
         if ($AppsAssignList.Count -eq 0) {
             # Don't allow pipeline to continue
             Write-Output -InputObject "No new applications to be assigned, aborting pipeline"
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
         }
         else {
             # Allow pipeline to continue
             Write-Output -InputObject "Allowing pipeline to continue execution"
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]true"
         }
     }
     else {
         Write-Output -InputObject "Failed to locate required $($AppsPublishListFileName) file in build artifacts staging directory, aborting pipeline"
-        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
     }
 }

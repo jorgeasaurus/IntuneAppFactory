@@ -167,8 +167,6 @@ Process {
                     "AppId" = if (-not([string]::IsNullOrEmpty($App.AppId))) { $App.AppId } else { [string]::Empty }
                     "AppFolderName" = $App.AppFolderName
                     "FilterOptions" =  $App.FilterOptions
-                    "StorageAccountName" = if (-not([string]::IsNullOrEmpty($App.StorageAccountName))) { $App.StorageAccountName } else { [string]::Empty }
-                    "StorageAccountContainerName" = if (-not([string]::IsNullOrEmpty($App.StorageAccountContainerName))) { $App.StorageAccountContainerName } else { [string]::Empty }
                     "IconURL" = if ($IconURLAvailable -eq $true) { $AppFileContent.PackageInformation.IconURL } else { [string]::Empty }
                 }
 
@@ -196,15 +194,9 @@ Process {
         if ($AppsProcessList.Count -eq 0) {
             # Don't allow pipeline to continue
             Write-Output -InputObject "No applications allowed to be processed, aborting pipeline"
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
-        }
-        else {
-            # Allow pipeline to continue
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]true"
         }
     }
     catch [System.Exception] {
-        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
         throw "$($MyInvocation.MyCommand): Failed to access '$($AppListPath)' with error message: $($_.Exception.Message)"
     }
 }

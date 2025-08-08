@@ -125,11 +125,9 @@ Process {
     if ($PipelineAllowed -eq $false) {
         # Don't allow pipeline to continue
         Write-Output -InputObject "Required files are missing, aborting pipeline"
-        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
     }
     else {
         # Allow pipeline to continue
         Write-Output -InputObject "Required files are present, pipeline can continue"
-        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]true"
     }
 }
