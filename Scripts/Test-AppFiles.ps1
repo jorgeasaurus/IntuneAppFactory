@@ -167,8 +167,6 @@ Process {
                     "AppId" = if (-not([string]::IsNullOrEmpty($App.AppId))) { $App.AppId } else { [string]::Empty }
                     "AppFolderName" = $App.AppFolderName
                     "FilterOptions" =  $App.FilterOptions
-                    "StorageAccountName" = if (-not([string]::IsNullOrEmpty($App.StorageAccountName))) { $App.StorageAccountName } else { [string]::Empty }
-                    "StorageAccountContainerName" = if (-not([string]::IsNullOrEmpty($App.StorageAccountContainerName))) { $App.StorageAccountContainerName } else { [string]::Empty }
                     "IconURL" = if ($IconURLAvailable -eq $true) { $AppFileContent.PackageInformation.IconURL } else { [string]::Empty }
                 }
 
