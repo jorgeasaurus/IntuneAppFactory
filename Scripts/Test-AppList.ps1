@@ -247,8 +247,7 @@ Process {
                     }
                     "DirectUrl" {
                         Write-Output -InputObject "Using direct download URL"
-                        $FileExt = [System.IO.Path]::GetExtension($App.DownloadUrl).TrimStart('.')
-                        $AppItem = [PSCustomObject]@{
+                        $FileExtRaw = [System.IO.Path]::GetExtension($App.DownloadUrl)
                             Version = $App.Version
                             URI = $App.DownloadUrl
                             InstallerType = $FileExt
