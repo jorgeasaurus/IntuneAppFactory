@@ -231,6 +231,10 @@ Process {
                     }
                     "GitHubRelease" {
                         Write-Output -InputObject "Attempting to retrieve app details from GitHub Release"
+                        if (-not (Test-GitHubInputValid -GitHubRepo $App.GitHubRepo -ReleaseTag $App.ReleaseTag -SetupFile $App.SetupFile)) {
+                            Write-Warning -Message "Invalid GitHub input detected for app: $($App.IntuneAppName). Skipping this app. (GitHubRepo: $($App.GitHubRepo), ReleaseTag: $($App.ReleaseTag), SetupFile: $($App.SetupFile))"
+                            continue
+                        }
                         $DownloadUrl = "https://github.com/$($App.GitHubRepo)/releases/download/$($App.ReleaseTag)/$($App.SetupFile)"
                         $FileExt = [System.IO.Path]::GetExtension($App.SetupFile).TrimStart('.')
                         $AppItem = [PSCustomObject]@{
