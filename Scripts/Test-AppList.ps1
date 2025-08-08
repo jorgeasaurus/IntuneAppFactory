@@ -23,6 +23,7 @@
     1.0.4 - (2024-03-07) Added support for empty filter options in Get-EvergreenAppItem function
     1.0.5 - (2024-08-25) Added function to test and convert version strings with invalid characters to improve version comparison for detected applications in Intune.
                          Improved application detection logic using the new naming convention property specified in the appList.json file.
+    1.0.6 - (2024-09-03) Removed Azure Storage Account support and added GitHub Release and DirectUrl sources
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param (
@@ -38,9 +39,7 @@ param (
     [ValidateNotNullOrEmpty()]
     [string]$ClientSecret,
 
-    [parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
-    [string]$StorageAccountAccessKey
+    
 )
 Process {
     # Functions
@@ -180,104 +179,6 @@ Process {
         }
     }
 
-    function Get-AzureBlobContent {
-        param(
-            [parameter(Mandatory = $true, HelpMessage = "Existing context of the Azure Storage Account.")]
-            [ValidateNotNullOrEmpty()]
-            [System.Object]$StorageAccountContext,
-    
-            [parameter(Mandatory = $true, HelpMessage = "Name of the Azure Storage Blob container.")]
-            [ValidateNotNullOrEmpty()]
-            [string]$ContainerName
-        )
-        try {   
-            # Construct array list for return value containing file names
-            $BlobList = New-Object -TypeName "System.Collections.ArrayList"
-    
-            try {
-                # Retrieve content from storage account blob
-                $StorageBlobContents = Get-AzStorageBlob -Container $ContainerName -Context $StorageAccountContext -ErrorAction Stop
-                if ($StorageBlobContents -ne $null) {
-                    foreach ($StorageBlobContent in $StorageBlobContents) {
-                        Write-Output -InputObject "Adding content file to return list: $($StorageBlobContent.Name)"
-                        $BlobList.Add($StorageBlobContent) | Out-Null
-                    }
-                }
-    
-                # Handle return value
-                return $BlobList
-            }
-            catch [System.Exception] {
-                Write-Warning -Message "Failed to retrieve storage account blob contents. Error message: $($_.Exception.Message)"
-            }
-        }
-        catch [System.Exception] {
-            Write-Warning -Message "Failed to retrieve storage account context. Error message: $($_.Exception.Message)"
-        }
-    }
-
-    function Get-StorageAccountAppItem {
-        param (
-            [parameter(Mandatory = $true, HelpMessage = "Specify the storage account name.")]
-            [ValidateNotNullOrEmpty()]
-            [string]$StorageAccountName,
-    
-            [parameter(Mandatory = $true, HelpMessage = "Specify the storage account container name.")]
-            [ValidateNotNullOrEmpty()]
-            [string]$ContainerName
-        )
-        process {
-            # Create storage account context using access key
-            $StorageAccountContext = New-AzStorageContext -StorageAccountName $StorageAccountName -StorageAccountKey $StorageAccountAccessKey
-    
-            # Retrieve all storage account blob items in container
-            $BlobItems = Get-AzureBlobContent -StorageAccountContext $StorageAccountContext -ContainerName $ContainerName
-            if ($BlobItems -ne $null) {
-                # Read the contents of the latest.json file
-                $LatestFile = $BlobItems | Where-Object { $PSItem.Name -like "latest.json" }
-                if ($LatestFile -ne $null) {
-                    # Construct temporary latest.json file destination
-                    $LatestSetupFileDestination = Join-Path -Path $env:PIPELINE_WORKSPACE -ChildPath (Join-Path -Path "LatestFiles" -ChildPath $ContainerName)
-                    if (-not(Test-Path -Path $LatestSetupFileDestination)) {
-                        New-Item -Path $LatestSetupFileDestination -ItemType "Directory" | Out-Null
-                    }
-    
-                    # Retrieve the latest.json file content and convert from JSON
-                    $LatestSetupFile = Get-AzStorageBlobContent -Context $StorageAccountContext -Container $ContainerName -Blob "latest.json" -Destination $LatestSetupFileDestination -Force
-                    $LatestSetupFilePath = Join-Path -Path $LatestSetupFileDestination -ChildPath "latest.json"
-                    if (Test-Path -Path $LatestSetupFilePath) {
-                        $LatestSetupFileContent = Get-Content -Path $LatestSetupFilePath | ConvertFrom-Json
-    
-                        # Get the latest modified setup file
-                        $BlobItem = $BlobItems | Where-Object { (([System.IO.Path]::GetExtension($PSItem.Name)) -match ".msi|.exe|.zip") -and ($PSItem.Name -like $LatestSetupFileContent.SetupName) } | Sort-Object -Property "LastModified" -Descending | Select-Object -First 1
-                        if ($BlobItem -ne $null) {
-                            # Construct custom object for return value
-                            $PSObject = [PSCustomObject]@{
-                                "Version" = $LatestSetupFileContent.SetupVersion
-                                "URI" = -join@($StorageAccountContext.BlobEndPoint, $ContainerName, "/", $BlobItem.Name)
-                                "BlobName" = $BlobItem.Name
-                            }
-            
-                            # Handle return value
-                            return $PSObject
-                        }
-                        else {
-                            Write-Warning -Message "Could not find blob file in container with name from latest.json: $($LatestSetupFileContent.SetupName)"
-                        }
-                    }
-                    else {
-                        Write-Warning -Message "Could not locate latest.json file after attempted download from storage account container"
-                    }
-                }
-                else {
-                    Write-Warning -Message "Could not find latest.json file in container: $($ContainerName)"
-                }
-            }
-            else {
-                Write-Warning -Message "Could not find a setup file in container: $($ContainerName)"
-            }
-        }
-    }
 
     # Intitialize variables
     $AppsDownloadListFileName = "AppsDownloadList.json"
@@ -328,9 +229,30 @@ Process {
                             $AppItem = Get-EvergreenAppItem -AppId $App.AppId
                         }
                     }
-                    "StorageAccount" {
-                        Write-Output -InputObject "Attempting to retrieve app details from Storage Account"
-                        $AppItem = Get-StorageAccountAppItem -StorageAccountName $App.StorageAccountName -ContainerName $App.StorageAccountContainerName
+                    "GitHubRelease" {
+                        Write-Output -InputObject "Attempting to retrieve app details from GitHub Release"
+                        if (-not (Test-GitHubInputValid -GitHubRepo $App.GitHubRepo -ReleaseTag $App.ReleaseTag -SetupFile $App.SetupFile)) {
+                            Write-Warning -Message "Invalid GitHub input detected for app: $($App.IntuneAppName). Skipping this app. (GitHubRepo: $($App.GitHubRepo), ReleaseTag: $($App.ReleaseTag), SetupFile: $($App.SetupFile))"
+                            continue
+                        }
+                        $DownloadUrl = "https://github.com/$($App.GitHubRepo)/releases/download/$($App.ReleaseTag)/$($App.SetupFile)"
+                        $FileExtRaw = [System.IO.Path]::GetExtension($App.SetupFile)
+                        $FileExt = if (![string]::IsNullOrEmpty($FileExtRaw)) { $FileExtRaw.TrimStart('.') } else { "" }
+                        $AppItem = [PSCustomObject]@{
+                            Version = $App.ReleaseTag
+                            URI = $DownloadUrl
+                            InstallerType = $FileExt
+                            FileExtension = $FileExt
+                        }
+                    }
+                    "DirectUrl" {
+                        Write-Output -InputObject "Using direct download URL"
+                        $FileExtRaw = [System.IO.Path]::GetExtension($App.DownloadUrl)
+                            Version = $App.Version
+                            URI = $App.DownloadUrl
+                            InstallerType = $FileExt
+                            FileExtension = $FileExt
+                        }
                     }
                 }
 
@@ -438,9 +360,6 @@ Process {
                                     "URI" = $AppItem.URI
                                     "InstallerType" = $AppItem.InstallerType
                                     "FileExtension" = $AppItem.FileExtension
-                                    "StorageAccountName" = if (-not([string]::IsNullOrEmpty($App.StorageAccountName))) { $App.StorageAccountName } else { [string]::Empty }
-                                    "StorageAccountContainerName" = if (-not([string]::IsNullOrEmpty($App.StorageAccountContainerName))) { $App.StorageAccountContainerName } else { [string]::Empty }
-                                    "BlobName" = if ($AppItem.BlobName -ne $null) { $AppItem.BlobName } else { [string]::Empty }
                                     "IconURL" = $App.IconURL
                                 }
     

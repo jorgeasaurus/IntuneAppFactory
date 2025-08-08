@@ -1,5 +1,9 @@
 # Release notes for IntuneAppFactory
 
+## 1.2.0
+- Removed Azure Storage Account dependency
+- Added support for GitHub Releases and direct URLs for installer sources
+
 ## 1.1.0
 - A new required property in the appList.json file called `IntuneAppNamingConvention` has been added, with the following possible values: `PublisherAppNameAppVersion`, `PublisherAppName`, `AppNameAppVersion` or `AppName`. This property controls how the application published to Intune will be named. For example, if the `IntuneAppNamingConvention` property is set to `PublisherAppName`, the name of the application in Intune would be a combination of the `AppPublisher` and the `IntuneAppName` properties, resulting in e.g. 'Igor Pavlov 7-Zip'.
 - Fixed a bug in the `Get-EvergreenAppItem` function referenced in issue #18.
