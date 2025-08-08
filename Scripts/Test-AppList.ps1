@@ -233,8 +233,10 @@ Process {
                         Write-Output -InputObject "Attempting to retrieve app details from GitHub Release"
                         $DownloadUrl = "https://github.com/$($App.GitHubRepo)/releases/download/$($App.ReleaseTag)/$($App.SetupFile)"
                         $FileExt = [System.IO.Path]::GetExtension($App.SetupFile).TrimStart('.')
+                        # Sanitize ReleaseTag to remove leading 'v' or 'V' if present
+                        $SanitizedVersion = $App.ReleaseTag -replace '^[vV]', ''
                         $AppItem = [PSCustomObject]@{
-                            Version = $App.ReleaseTag
+                            Version = $SanitizedVersion
                             URI = $DownloadUrl
                             InstallerType = $FileExt
                             FileExtension = $FileExt
