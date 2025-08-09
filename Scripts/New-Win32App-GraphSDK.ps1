@@ -155,7 +155,25 @@ Process {
         # Ensure IntuneWinAppUtil.exe is available
         $IntuneWinAppUtil = Join-Path -Path $env:BUILD_BINARIESDIRECTORY -ChildPath "IntuneWinAppUtil.exe"
         if (-not (Test-Path -Path $IntuneWinAppUtil)) {
-            throw "IntuneWinAppUtil.exe not found at: $IntuneWinAppUtil"
+            # Try alternate locations
+            $AlternateLocations = @(
+                (Join-Path -Path $env:BUILD_SOURCESDIRECTORY -ChildPath "IntuneWinAppUtil.exe"),
+                (Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "IntuneWinAppUtil.exe"),
+                (Join-Path -Path (Get-Location) -ChildPath "IntuneWinAppUtil.exe")
+            )
+            
+            $IntuneWinAppUtil = $null
+            foreach ($Location in $AlternateLocations) {
+                if (Test-Path -Path $Location) {
+                    $IntuneWinAppUtil = $Location
+                    Write-Output -InputObject "Found IntuneWinAppUtil.exe at: $IntuneWinAppUtil"
+                    break
+                }
+            }
+            
+            if (-not $IntuneWinAppUtil) {
+                throw "IntuneWinAppUtil.exe not found in any expected location. Checked: $($AlternateLocations -join ', ')"
+            }
         }
 
         # Create output folder if it doesn't exist
@@ -171,9 +189,15 @@ Process {
             # Find the created .intunewin file
             $IntuneWinFile = Get-ChildItem -Path $OutputFolder -Filter "*.intunewin" | Select-Object -First 1
             
-            return @{
-                Path = $IntuneWinFile.FullName
-                FileName = $IntuneWinFile.Name
+            if ($IntuneWinFile) {
+                Write-Output -InputObject "Successfully created .intunewin file: $($IntuneWinFile.FullName)"
+                return @{
+                    Path = $IntuneWinFile.FullName
+                    FileName = $IntuneWinFile.Name
+                }
+            }
+            else {
+                throw "IntuneWinAppUtil.exe reported success but no .intunewin file was found in output folder: $OutputFolder"
             }
         }
         else {
@@ -505,7 +529,13 @@ Process {
             Write-Output -InputObject "Creating .intunewin package file from source folder"
             $IntuneAppPackage = New-IntuneWin32AppPackage -SourceFolder $SourceFolder -SetupFile $AppData.PackageInformation.SetupFile -OutputFolder $OutputFolder
 
+            # Validate the package was created successfully
+            if (-not $IntuneAppPackage -or -not $IntuneAppPackage.Path) {
+                throw "Failed to create .intunewin package - New-IntuneWin32AppPackage returned null or invalid result"
+            }
+
             # Get file content and encryption info
+            Write-Output -InputObject "Getting file content and encryption info for: $($IntuneAppPackage.Path)"
             $FileContentInfo = Get-IntuneWin32AppFileContent -FilePath $IntuneAppPackage.Path
 
             # Create detection rules
