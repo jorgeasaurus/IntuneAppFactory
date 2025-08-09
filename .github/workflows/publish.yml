@@ -15,8 +15,6 @@ BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}/artifacts
 BUILD_BINARIESDIRECTORY: ${{ runner.temp }}/binaries
 steps:
 - uses: actions/checkout@v4
-
-```
   - name: Prepare directories
     shell: pwsh
     run: |
@@ -69,4 +67,4 @@ steps:
     with:
       name: installers
       path: ${{ env.PIPELINE_WORKSPACE }}/Installers
-```
+
