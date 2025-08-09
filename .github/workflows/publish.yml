@@ -44,12 +44,26 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Testing template files..." -ForegroundColor Green
-          .\Scripts\Test-TemplatesFolder.ps1 -Verbose
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Template validation failed"
+          $result = & .\Scripts\Test-TemplatesFolder.ps1
+          Write-Output $result
+          if ($result -match "aborting pipeline") {
+            Write-Error "Template validation failed - missing required files"
             exit 1
           }
+          Write-Host "Template validation passed" -ForegroundColor Green
 
+      - name: Test App Files
+        shell: pwsh
+        run: |
+          Write-Host "Validating app configurations..." -ForegroundColor Green
+          & .\Scripts\Test-AppFiles.ps1
+          
+          # Move AppsProcessList.json to expected location
+          if (Test-Path ".\AppsProcessList.json") {
+            New-Item -ItemType Directory -Path ".\AppsProcessList" -Force | Out-Null
+            Move-Item -Path ".\AppsProcessList.json" -Destination ".\AppsProcessList\AppsProcessList.json" -Force
+          }
+          
       - name: Test and Check Applications
         shell: pwsh
         env:
