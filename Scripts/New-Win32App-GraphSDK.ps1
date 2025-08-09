@@ -310,11 +310,22 @@ Process {
             Write-Verbose "Processing detection rule of type: $($Rule.Type)"
             switch ($Rule.Type) {
                 "MSI" {
-                    $GraphRule = @{
-                        "@odata.type" = "#microsoft.graph.win32LobAppProductCodeDetection"
-                        productCode = $Rule.ProductCode
-                        productVersionOperator = $Rule.ProductVersionOperator.ToLower()
-                        productVersion = $Rule.ProductVersion
+                    # Validate MSI detection rule has required values
+                    if ([string]::IsNullOrWhiteSpace($Rule.ProductCode) -or $Rule.ProductCode -eq "<replaced_by_pipeline>") {
+                        Write-Warning "MSI detection rule has invalid ProductCode: '$($Rule.ProductCode)' - skipping"
+                        $GraphRule = $null
+                    }
+                    elseif ([string]::IsNullOrWhiteSpace($Rule.ProductVersion) -or $Rule.ProductVersion -eq "<replaced_by_pipeline>") {
+                        Write-Warning "MSI detection rule has invalid ProductVersion: '$($Rule.ProductVersion)' - skipping"
+                        $GraphRule = $null
+                    }
+                    else {
+                        $GraphRule = @{
+                            "@odata.type" = "#microsoft.graph.win32LobAppProductCodeDetection"
+                            productCode = $Rule.ProductCode
+                            productVersionOperator = if ($Rule.ProductVersionOperator) { $Rule.ProductVersionOperator.ToLower() } else { "greaterthanorequal" }
+                            productVersion = $Rule.ProductVersion
+                        }
                     }
                 }
                 "Script" {
@@ -350,26 +361,47 @@ Process {
                     }
                 }
                 "File" {
-                    $GraphRule = @{
-                        "@odata.type" = "#microsoft.graph.win32LobAppFileSystemDetection"
-                        path = $Rule.Path
-                        fileOrFolderName = $Rule.FileOrFolder
-                        check32BitOn64System = $Rule.Check32BitOn64System
-                        detectionType = if ($Rule.DetectionType) { $Rule.DetectionType.ToLower() } else { "version" }
+                    # Validate file detection rule has required values
+                    $hasValidValue = $false
+                    if ($Rule.DetectionMethod -eq "Version" -and $Rule.VersionValue -and $Rule.VersionValue -ne "<replaced_by_pipeline>") {
+                        $hasValidValue = $true
+                    }
+                    elseif ($Rule.DetectionMethod -in @("DateModified", "DateCreated") -and $Rule.DateTimeValue) {
+                        $hasValidValue = $true
+                    }
+                    elseif ($Rule.DetectionMethod -eq "Size" -and $Rule.SizeInMBValue) {
+                        $hasValidValue = $true
+                    }
+                    elseif ($Rule.DetectionMethod -eq "Exists") {
+                        $hasValidValue = $true
                     }
                     
-                    # Add detection value based on method
-                    if ($Rule.DetectionMethod -in @("DateModified", "DateCreated")) {
-                        $GraphRule.operator = if ($Rule.Operator) { $Rule.Operator.ToLower() } else { "equal" }
-                        $GraphRule.detectionValue = $Rule.DateTimeValue
+                    if (-not $hasValidValue) {
+                        Write-Warning "File detection rule has invalid detection value - skipping"
+                        $GraphRule = $null
                     }
-                    elseif ($Rule.DetectionMethod -eq "Version") {
-                        $GraphRule.operator = if ($Rule.Operator) { $Rule.Operator.ToLower() } else { "greaterThanOrEqual" }
-                        $GraphRule.detectionValue = $Rule.VersionValue
-                    }
-                    elseif ($Rule.DetectionMethod -eq "Size") {
-                        $GraphRule.operator = if ($Rule.Operator) { $Rule.Operator.ToLower() } else { "equal" }
-                        $GraphRule.detectionValue = ($Rule.SizeInMBValue * 1024 * 1024).ToString()
+                    else {
+                        $GraphRule = @{
+                            "@odata.type" = "#microsoft.graph.win32LobAppFileSystemDetection"
+                            path = $Rule.Path
+                            fileOrFolderName = $Rule.FileOrFolder
+                            check32BitOn64System = $Rule.Check32BitOn64System
+                            detectionType = if ($Rule.DetectionType) { $Rule.DetectionType.ToLower() } else { "version" }
+                        }
+                        
+                        # Add detection value based on method
+                        if ($Rule.DetectionMethod -in @("DateModified", "DateCreated")) {
+                            $GraphRule.operator = if ($Rule.Operator) { $Rule.Operator.ToLower() } else { "equal" }
+                            $GraphRule.detectionValue = $Rule.DateTimeValue
+                        }
+                        elseif ($Rule.DetectionMethod -eq "Version") {
+                            $GraphRule.operator = if ($Rule.Operator) { $Rule.Operator.ToLower() } else { "greaterThanOrEqual" }
+                            $GraphRule.detectionValue = $Rule.VersionValue
+                        }
+                        elseif ($Rule.DetectionMethod -eq "Size") {
+                            $GraphRule.operator = if ($Rule.Operator) { $Rule.Operator.ToLower() } else { "equal" }
+                            $GraphRule.detectionValue = ($Rule.SizeInMBValue * 1024 * 1024).ToString()
+                        }
                     }
                 }
                 default {
