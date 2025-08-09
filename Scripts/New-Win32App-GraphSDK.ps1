@@ -273,9 +273,13 @@ Process {
                 runAsAccount = $AppData.Program.InstallExperience.ToLower()
                 deviceRestartBehavior = $AppData.Program.DeviceRestartBehavior.ToLower()
             }
-            rules = $RequirementRules
             detectionRules = $DetectionRules
             allowAvailableUninstall = if ($AppData.Program.AllowAvailableUninstall) { $true } else { $false }
+        }
+
+        # Add requirement rules if provided
+        if ($RequirementRules -and $RequirementRules.Count -gt 0) {
+            $Win32LobApp.rules = $RequirementRules
         }
 
         # Add icon if provided
@@ -325,7 +329,7 @@ Process {
                         check32BitOn64System = $Rule.Check32BitOn64System
                         keyPath = $Rule.KeyPath
                         valueName = $Rule.ValueName
-                        detectionType = $Rule.DetectionType.ToLower()
+                        detectionType = if ($Rule.DetectionType) { $Rule.DetectionType.ToLower() } else { "string" }
                     }
                     
                     # Add detection value based on type
@@ -385,13 +389,7 @@ Process {
 
         $GraphRules = @()
         
-        # Add base requirement rule
-        $BaseRule = @{
-            "@odata.type" = "#microsoft.graph.win32LobAppRule"
-            ruleType = "requirement"
-        }
-        $GraphRules += $BaseRule
-        
+        # Only add actual requirement rules, not a base rule
         # Add custom requirement rules
         foreach ($Rule in $CustomRequirementRules) {
             switch ($Rule.Type) {

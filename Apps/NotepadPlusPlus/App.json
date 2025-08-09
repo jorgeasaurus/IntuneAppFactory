@@ -32,6 +32,7 @@
         {
             "Type": "Registry",
             "DetectionMethod": "VersionComparison",
+            "DetectionType": "string",
             "KeyPath": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Notepad++",
             "ValueName": "DisplayVersion",
             "Operator": "greaterThanOrEqual",
