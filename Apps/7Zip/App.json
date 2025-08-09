@@ -32,6 +32,7 @@
         {
             "Type": "File",
             "DetectionMethod": "Version",
+            "DetectionType": "version",
             "Path": "%ProgramFiles%\\7-Zip",
             "FileOrFolder": "7z.exe",
             "Operator": "greaterThanOrEqual",

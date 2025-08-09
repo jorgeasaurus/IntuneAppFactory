@@ -348,20 +348,20 @@ Process {
                         path = $Rule.Path
                         fileOrFolderName = $Rule.FileOrFolder
                         check32BitOn64System = $Rule.Check32BitOn64System
-                        detectionType = $Rule.DetectionType.ToLower()
+                        detectionType = if ($Rule.DetectionType) { $Rule.DetectionType.ToLower() } else { "version" }
                     }
                     
                     # Add detection value based on method
                     if ($Rule.DetectionMethod -in @("DateModified", "DateCreated")) {
-                        $GraphRule.operator = $Rule.Operator.ToLower()
+                        $GraphRule.operator = if ($Rule.Operator) { $Rule.Operator.ToLower() } else { "equal" }
                         $GraphRule.detectionValue = $Rule.DateTimeValue
                     }
                     elseif ($Rule.DetectionMethod -eq "Version") {
-                        $GraphRule.operator = $Rule.Operator.ToLower()
+                        $GraphRule.operator = if ($Rule.Operator) { $Rule.Operator.ToLower() } else { "greaterThanOrEqual" }
                         $GraphRule.detectionValue = $Rule.VersionValue
                     }
                     elseif ($Rule.DetectionMethod -eq "Size") {
-                        $GraphRule.operator = $Rule.Operator.ToLower()
+                        $GraphRule.operator = if ($Rule.Operator) { $Rule.Operator.ToLower() } else { "equal" }
                         $GraphRule.detectionValue = ($Rule.SizeInMBValue * 1024 * 1024).ToString()
                     }
                 }
