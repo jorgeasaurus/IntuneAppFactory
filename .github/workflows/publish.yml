@@ -10,11 +10,15 @@ jobs:
     runs-on: [self-hosted, Windows]
     env:
       BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
-      PIPELINE_WORKSPACE: ${{ runner.temp }}
-      BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}/artifacts
-      BUILD_BINARIESDIRECTORY: ${{ runner.temp }}/binaries
     steps:
       - uses: actions/checkout@v4
+
+      - name: Initialize path environment variables
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_ENV -Value "PIPELINE_WORKSPACE=$env:RUNNER_TEMP"
+          Add-Content -Path $env:GITHUB_ENV -Value "BUILD_ARTIFACTSTAGINGDIRECTORY=$env:RUNNER_TEMP\artifacts"
+          Add-Content -Path $env:GITHUB_ENV -Value "BUILD_BINARIESDIRECTORY=$env:RUNNER_TEMP\binaries"
 
       - name: Prepare directories
         shell: pwsh
