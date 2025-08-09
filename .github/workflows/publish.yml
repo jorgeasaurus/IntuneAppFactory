@@ -99,24 +99,30 @@ jobs:
           if (Test-Path ".\AppsDownloadList.json") {
             Write-Host "Downloading application installers..." -ForegroundColor Green
             
-            $apps = Get-Content ".\AppsDownloadList.json" | ConvertFrom-Json
-            foreach ($app in $apps) {
-              Write-Host "Downloading: $($app.IntuneAppName)" -ForegroundColor Cyan
-              .\Scripts\Save-Installer.ps1 -Verbose
+            # Move AppsDownloadList.json to expected location
+            if (-not (Test-Path ".\AppsDownloadList")) {
+              New-Item -ItemType Directory -Path ".\AppsDownloadList" -Force | Out-Null
             }
+            Copy-Item -Path ".\AppsDownloadList.json" -Destination ".\AppsDownloadList\AppsDownloadList.json" -Force
+            
+            # Run the download script once (it processes all apps)
+            .\Scripts\Save-Installer.ps1
           }
 
       - name: Prepare Application Packages
         shell: pwsh
         run: |
-          if (Test-Path ".\AppsDownloadList.json") {
+          if (Test-Path ".\AppsPrepareList.json") {
             Write-Host "Preparing application packages..." -ForegroundColor Green
             
-            $apps = Get-Content ".\AppsDownloadList.json" | ConvertFrom-Json
-            foreach ($app in $apps) {
-              Write-Host "Preparing package for: $($app.IntuneAppName)" -ForegroundColor Cyan
-              .\Scripts\Prepare-AppPackageFolder.ps1 -Verbose
+            # Move AppsPrepareList.json to expected location if needed
+            if (-not (Test-Path ".\AppsPrepareList")) {
+              New-Item -ItemType Directory -Path ".\AppsPrepareList" -Force | Out-Null
             }
+            Move-Item -Path ".\AppsPrepareList.json" -Destination ".\AppsPrepareList\AppsPrepareList.json" -Force
+            
+            # Run the prepare script once (it processes all apps)
+            .\Scripts\Prepare-AppPackageFolder.ps1
           }
 
       - name: Publish to Intune
