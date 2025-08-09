@@ -304,7 +304,10 @@ Process {
 
         $GraphRules = @()
         
+        Write-Verbose "Processing $($DetectionRule.Count) detection rule(s)"
+        
         foreach ($Rule in $DetectionRule) {
+            Write-Verbose "Processing detection rule of type: $($Rule.Type)"
             switch ($Rule.Type) {
                 "MSI" {
                     $GraphRule = @{
@@ -369,9 +372,15 @@ Process {
                         $GraphRule.detectionValue = ($Rule.SizeInMBValue * 1024 * 1024).ToString()
                     }
                 }
+                default {
+                    Write-Warning "Unknown detection rule type: $($Rule.Type)"
+                    $GraphRule = $null
+                }
             }
             
-            $GraphRules += $GraphRule
+            if ($GraphRule) {
+                $GraphRules += $GraphRule
+            }
         }
         
         return $GraphRules
@@ -538,14 +547,19 @@ Process {
 
             # Create detection rules
             Write-Output -InputObject "Creating detection rules"
-            $DetectionRules = New-Object -TypeName "System.Collections.ArrayList"
-            foreach ($DetectionRuleItem in $AppData.DetectionRule) {
-                # Process detection rules (simplified for brevity - full implementation would handle all types)
-                $DetectionRules.Add($DetectionRuleItem) | Out-Null
+            
+            # Convert detection rules to Graph format directly from AppData
+            $GraphDetectionRules = Convert-DetectionRuleToGraph -DetectionRule $AppData.DetectionRule
+            
+            if (-not $GraphDetectionRules -or $GraphDetectionRules.Count -eq 0) {
+                Write-Warning "No detection rules were converted successfully. Check App.json configuration."
+                Write-Output -InputObject "Raw detection rules from App.json:"
+                $AppData.DetectionRule | ConvertTo-Json -Depth 3 | Write-Output
+                throw "No valid detection rules found. Cannot create Win32 app without detection rules."
+            } else {
+                Write-Output -InputObject "Successfully converted $($GraphDetectionRules.Count) detection rule(s)"
+                Write-Verbose "Converted detection rules: $($GraphDetectionRules | ConvertTo-Json -Depth 3)"
             }
-
-            # Convert detection rules to Graph format
-            $GraphDetectionRules = Convert-DetectionRuleToGraph -DetectionRule $DetectionRules
 
             # Create requirement rules
             Write-Output -InputObject "Creating requirement rules"
