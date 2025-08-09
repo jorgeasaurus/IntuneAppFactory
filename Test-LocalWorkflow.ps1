@@ -20,8 +20,8 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [ValidateSet('test-local', 'publish')]
-    [string]$Workflow = 'test-local',
+    [ValidateSet('publish')]
+    [string]$Workflow = 'publish',
     
     [Parameter()]
     [string]$Job,

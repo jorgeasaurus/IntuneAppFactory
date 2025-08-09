@@ -26,6 +26,53 @@
     1.0.2 - (2024-03-04) Added ProductCode string replacement for Deploy-Application.ps1
 #>
 Process {
+    # Functions
+    function Get-MSIMetaData {
+        param(
+            [Parameter(Mandatory = $true)]
+            [ValidateScript({Test-Path $_})]
+            [string]$Path,
+            
+            [Parameter(Mandatory = $true)]
+            [string]$Property
+        )
+        
+        try {
+            # Create Windows Installer COM object
+            $WindowsInstaller = New-Object -ComObject WindowsInstaller.Installer
+            
+            # Open the MSI database
+            $Database = $WindowsInstaller.GetType().InvokeMember("OpenDatabase", "InvokeMethod", $null, $WindowsInstaller, @($Path, 0))
+            
+            # Query the Property table
+            $Query = "SELECT Value FROM Property WHERE Property = '$Property'"
+            $View = $Database.GetType().InvokeMember("OpenView", "InvokeMethod", $null, $Database, $Query)
+            $View.GetType().InvokeMember("Execute", "InvokeMethod", $null, $View, $null)
+            
+            # Fetch the result
+            $Record = $View.GetType().InvokeMember("Fetch", "InvokeMethod", $null, $View, $null)
+            
+            if ($Record) {
+                $Value = $Record.GetType().InvokeMember("StringData", "GetProperty", $null, $Record, 1)
+                return $Value
+            }
+            
+            return $null
+        }
+        catch {
+            Write-Warning "Failed to get MSI property '$Property' from '$Path': $_"
+            return $null
+        }
+        finally {
+            # Clean up COM objects
+            if ($View) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($View) | Out-Null }
+            if ($Database) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Database) | Out-Null }
+            if ($WindowsInstaller) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($WindowsInstaller) | Out-Null }
+            [System.GC]::Collect()
+            [System.GC]::WaitForPendingFinalizers()
+        }
+    }
+    
     # Intitialize variables
     $AppsPublishListFileName = "AppsPublishList.json"
     $AppsPublishListFilePath = Join-Path -Path $env:BUILD_BINARIESDIRECTORY -ChildPath $AppsPublishListFileName

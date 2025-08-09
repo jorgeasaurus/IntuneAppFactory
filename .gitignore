@@ -1,0 +1,44 @@
+# Tools and binaries
+Tools/
+bin/
+*.exe
+
+# Build outputs
+Downloads/
+Installers/
+Publish/
+Output/
+
+# Pipeline artifacts
+AppsProcessList/
+AppsDownloadList/
+AppsPrepareList/
+*.json
+!appList.json
+!Apps/**/*.json
+!Templates/**/*.json
+
+# Local secrets
+.secrets.local
+*.local
+
+# IDE and OS files
+.vs/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test artifacts
+TestResults/
+coverage/
+.actrc
+.secrets
+act-setup.md
+CLAUDE.md

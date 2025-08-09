@@ -1,74 +1,162 @@
 name: Intune App Factory
 
 on:
-  workflow_dispatch:
   schedule:
+    # Run every 6 hours
     - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
-  build:
+  process_apps:
+    name: Process Applications
     runs-on: [self-hosted, Windows]
-    env:
-      BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Initialize path environment variables
-        shell: pwsh
-        run: |
-          Add-Content -Path $env:GITHUB_ENV -Value "PIPELINE_WORKSPACE=$env:RUNNER_TEMP"
-          Add-Content -Path $env:GITHUB_ENV -Value "BUILD_ARTIFACTSTAGINGDIRECTORY=$env:RUNNER_TEMP\artifacts"
-          Add-Content -Path $env:GITHUB_ENV -Value "BUILD_BINARIESDIRECTORY=$env:RUNNER_TEMP\binaries"
-
-      - name: Prepare directories
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "$env:BUILD_BINARIESDIRECTORY" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$env:BUILD_ARTIFACTSTAGINGDIRECTORY" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$env:PIPELINE_WORKSPACE" | Out-Null
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install PowerShell Modules
-        shell: pwsh
+        shell: pwsh -NoProfile
         run: |
-          Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
+          Write-Host "Installing required PowerShell modules..." -ForegroundColor Green
+          .\Scripts\Install-Modules-GraphSDK.ps1 -Verbose
 
-          Install-Module -Name IntuneWin32App -RequiredVersion 1.4.0 -Force -AllowClobber
+      - name: Test Templates
+        shell: pwsh -NoProfile
+        run: |
+          Write-Host "Testing template files..." -ForegroundColor Green
+          .\Scripts\Test-TemplatesFolder.ps1 -Verbose
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Template validation failed"
+            exit 1
+          }
 
-          Install-Module -Name Evergreen -Force -AllowClobber
-          Install-Module -Name MSAL.PS -Force -AllowClobber
-
-      - name: Test App Files
-        shell: pwsh
-        run: ./Scripts/Test-AppFiles.ps1
-
-      - name: Determine Apps to Download
-        shell: pwsh
+      - name: Test and Check Applications
+        shell: pwsh -NoProfile
         env:
           TENANT_ID: ${{ secrets.TENANT_ID }}
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
         run: |
-          ./Scripts/Test-AppList.ps1 -TenantID $env:TENANT_ID -ClientID $env:CLIENT_ID -ClientSecret $env:CLIENT_SECRET
+          Write-Host "Checking for new application versions..." -ForegroundColor Green
+          
+          # Test app configurations and check for new versions
+          .\Scripts\Test-AppList.ps1 `
+            -TenantID $env:TENANT_ID `
+            -ClientID $env:CLIENT_ID `
+            -ClientSecret $env:CLIENT_SECRET `
+            -Verbose
+          
+          # Check if any apps need processing
+          if (Test-Path ".\AppsDownloadList.json") {
+            $apps = Get-Content ".\AppsDownloadList.json" | ConvertFrom-Json
+            if ($apps.Count -eq 0) {
+              Write-Host "No applications need updating" -ForegroundColor Yellow
+              exit 0
+            }
+            Write-Host "Found $($apps.Count) applications to process" -ForegroundColor Green
+          } else {
+            Write-Host "No applications to process" -ForegroundColor Yellow
+            exit 0
+          }
 
-      - name: Download Installers
-        shell: pwsh
-        run: ./Scripts/Save-Installer.ps1
+      - name: Download Applications
+        shell: pwsh -NoProfile
+        run: |
+          if (Test-Path ".\AppsDownloadList.json") {
+            Write-Host "Downloading application installers..." -ForegroundColor Green
+            
+            $apps = Get-Content ".\AppsDownloadList.json" | ConvertFrom-Json
+            foreach ($app in $apps) {
+              Write-Host "Downloading: $($app.IntuneAppName)" -ForegroundColor Cyan
+              .\Scripts\Save-Installer.ps1 -Verbose
+            }
+          }
 
-      - name: Prepare App Package Folders
-        shell: pwsh
-        run: ./Scripts/Prepare-AppPackageFolder.ps1
+      - name: Prepare Application Packages
+        shell: pwsh -NoProfile
+        run: |
+          if (Test-Path ".\AppsDownloadList.json") {
+            Write-Host "Preparing application packages..." -ForegroundColor Green
+            
+            $apps = Get-Content ".\AppsDownloadList.json" | ConvertFrom-Json
+            foreach ($app in $apps) {
+              Write-Host "Preparing package for: $($app.IntuneAppName)" -ForegroundColor Cyan
+              .\Scripts\Prepare-AppPackageFolder.ps1 -Verbose
+            }
+          }
 
-      - name: Publish Win32 Apps
-        shell: pwsh
+      - name: Publish to Intune
+        shell: pwsh -NoProfile
         env:
           TENANT_ID: ${{ secrets.TENANT_ID }}
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          WORKSPACE_ID: ${{ secrets.LOG_ANALYTICS_WORKSPACE_ID }}
+          SHARED_KEY: ${{ secrets.LOG_ANALYTICS_SHARED_KEY }}
         run: |
-          ./Scripts/New-Win32App.ps1 -TenantID $env:TENANT_ID -ClientID $env:CLIENT_ID -ClientSecret $env:CLIENT_SECRET
+          if (Test-Path ".\AppsPublishList.json") {
+            Write-Host "Publishing applications to Intune..." -ForegroundColor Green
+            
+            # Use the Graph SDK version of the script
+            .\Scripts\New-Win32App-GraphSDK.ps1 `
+              -TenantID $env:TENANT_ID `
+              -ClientID $env:CLIENT_ID `
+              -ClientSecret $env:CLIENT_SECRET `
+              -WorkspaceID $(if ($env:WORKSPACE_ID) { $env:WORKSPACE_ID } else { "dummy" }) `
+              -SharedKey $(if ($env:SHARED_KEY) { $env:SHARED_KEY } else { "dummy" }) `
+              -Verbose
+          }
 
-      - name: Upload installers
-        uses: actions/upload-artifact@v4
-        with:
-          name: installers
-          path: ${{ env.PIPELINE_WORKSPACE }}/Installers
+      - name: Assign Applications
+        shell: pwsh -NoProfile
+        env:
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          WORKSPACE_ID: ${{ secrets.LOG_ANALYTICS_WORKSPACE_ID }}
+          SHARED_KEY: ${{ secrets.LOG_ANALYTICS_SHARED_KEY }}
+        run: |
+          if (Test-Path ".\AppsAssignmentList.json") {
+            Write-Host "Assigning applications..." -ForegroundColor Green
+            
+            # Use the Graph SDK version of the script
+            .\Scripts\New-AppAssignment-GraphSDK.ps1 `
+              -TenantID $env:TENANT_ID `
+              -ClientID $env:CLIENT_ID `
+              -ClientSecret $env:CLIENT_SECRET `
+              -WorkspaceID $(if ($env:WORKSPACE_ID) { $env:WORKSPACE_ID } else { "dummy" }) `
+              -SharedKey $(if ($env:SHARED_KEY) { $env:SHARED_KEY } else { "dummy" }) `
+              -Verbose
+          }
+
+      - name: Cleanup
+        if: always()
+        shell: pwsh -NoProfile
+        run: |
+          Write-Host "Cleaning up temporary files..." -ForegroundColor Green
+          
+          # Remove temporary files
+          $tempFiles = @(
+            ".\AppsDownloadList.json",
+            ".\AppsPublishList.json", 
+            ".\AppsAssignmentList.json",
+            ".\AppsProcessList.json"
+          )
+          
+          foreach ($file in $tempFiles) {
+            if (Test-Path $file) {
+              Remove-Item $file -Force
+              Write-Host "Removed: $file" -ForegroundColor Gray
+            }
+          }
+          
+          # Clean up download folders
+          if (Test-Path ".\Downloads") {
+            Remove-Item ".\Downloads" -Recurse -Force
+            Write-Host "Removed Downloads folder" -ForegroundColor Gray
+          }
+          
+          if (Test-Path ".\Output") {
+            Remove-Item ".\Output" -Recurse -Force  
+            Write-Host "Removed Output folder" -ForegroundColor Gray
+          }

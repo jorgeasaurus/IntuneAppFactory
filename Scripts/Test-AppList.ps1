@@ -41,6 +41,93 @@ param (
 )
 Process {
     # Functions
+    function Invoke-MSGraphOperation {
+        param(
+            [switch]$Get,
+            [string]$APIVersion = "v1.0",
+            [string]$Resource,
+            [string]$Body,
+            [string]$ContentType = "application/json"
+        )
+        
+        try {
+            # Ensure we have a valid token
+            if (-not $script:AuthToken -or $script:AuthToken.ExpiresOn -lt (Get-Date)) {
+                throw "Authentication token is missing or expired"
+            }
+            
+            $Headers = @{
+                "Authorization" = "Bearer $($script:AuthToken.AccessToken)"
+                "Content-Type" = $ContentType
+            }
+            
+            $Uri = "https://graph.microsoft.com/$APIVersion/$Resource"
+            
+            if ($Get) {
+                $Response = Invoke-RestMethod -Uri $Uri -Headers $Headers -Method Get -ErrorAction Stop
+                if ($Response.value) {
+                    return $Response.value
+                } else {
+                    return $Response
+                }
+            }
+        } catch {
+            Write-Warning "Graph API call failed: $_"
+            throw
+        }
+    }
+    
+    function Get-AccessToken {
+        param(
+            [Parameter(Mandatory = $true)]
+            [string]$TenantID,
+            
+            [Parameter(Mandatory = $true)]
+            [string]$ClientID,
+            
+            [Parameter(Mandatory = $true)]
+            [string]$ClientSecret
+        )
+        
+        try {
+            # Use MSAL.PS module for authentication
+            $Authority = "https://login.microsoftonline.com/$TenantID"
+            $Scope = "https://graph.microsoft.com/.default"
+            
+            # Create secure string for client secret
+            $SecureClientSecret = ConvertTo-SecureString -String $ClientSecret -AsPlainText -Force
+            
+            # Get token using MSAL
+            if (Get-Module -ListAvailable -Name "MSAL.PS") {
+                Import-Module MSAL.PS -Force
+                $Token = Get-MsalToken -ClientId $ClientID -ClientSecret $SecureClientSecret -TenantId $TenantID -Scopes $Scope
+                
+                # Return the access token in the expected format
+                return @{
+                    AccessToken = $Token.AccessToken
+                    ExpiresOn = $Token.ExpiresOn
+                }
+            } else {
+                # Fallback to direct API call
+                $Body = @{
+                    grant_type    = "client_credentials"
+                    client_id     = $ClientID
+                    client_secret = $ClientSecret
+                    scope         = $Scope
+                }
+                
+                $TokenResponse = Invoke-RestMethod -Uri "$Authority/oauth2/v2.0/token" -Method Post -Body $Body -ContentType "application/x-www-form-urlencoded"
+                
+                return @{
+                    AccessToken = $TokenResponse.access_token
+                    ExpiresOn = (Get-Date).AddSeconds($TokenResponse.expires_in)
+                }
+            }
+        } catch {
+            throw "Failed to get access token: $_"
+        }
+    }
+    
     function ConvertTo-Version {
         param(
             [Parameter(Mandatory = $true)]
@@ -185,7 +272,7 @@ Process {
 
     try {
         # Retrieve authentication token using client secret from key vault
-        $AuthToken = Get-AccessToken -TenantID $TenantID -ClientID $ClientID -ClientSecret $ClientSecret -ErrorAction "Stop"
+        $script:AuthToken = Get-AccessToken -TenantID $TenantID -ClientID $ClientID -ClientSecret $ClientSecret -ErrorAction "Stop"
 
         # Construct list of applications to be processed in the next stage
         $AppsDownloadList = New-Object -TypeName "System.Collections.ArrayList"
@@ -247,7 +334,7 @@ Process {
                             InstallerType = $FileExt
                             FileExtension = $FileExt
                         }
-                       
+                    }
                     "DirectUrl" {
                         Write-Output -InputObject "Using direct download URL"
                         $FileExt = [System.IO.Path]::GetExtension($App.DownloadUrl).TrimStart('.')
