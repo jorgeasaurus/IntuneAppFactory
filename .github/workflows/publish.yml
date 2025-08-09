@@ -126,8 +126,16 @@ jobs:
             }
             Move-Item -Path ".\AppsPrepareList.json" -Destination ".\AppsPrepareList\AppsPrepareList.json" -Force
             
-            # Run the prepare script
-            .\Scripts\Prepare-AppPackageFolder.ps1
+            # Run the prepare script with error handling
+            try {
+              Write-Host "Running Prepare-AppPackageFolder.ps1..." -ForegroundColor Cyan
+              .\Scripts\Prepare-AppPackageFolder.ps1
+              Write-Host "Prepare-AppPackageFolder.ps1 completed" -ForegroundColor Green
+            } catch {
+              Write-Error "Prepare-AppPackageFolder.ps1 failed: $_"
+              Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
+              exit 1
+            }
           } else {
             Write-Host "AppsPrepareList.json not found. Using AppsDownloadList.json as fallback..." -ForegroundColor Yellow
             
@@ -142,8 +150,16 @@ jobs:
               }
               Move-Item -Path ".\AppsPrepareList.json" -Destination ".\AppsPrepareList\AppsPrepareList.json" -Force
               
-              # Run the prepare script
-              .\Scripts\Prepare-AppPackageFolder.ps1
+              # Run the prepare script with error handling
+              try {
+                Write-Host "Running Prepare-AppPackageFolder.ps1 (fallback)..." -ForegroundColor Cyan
+                .\Scripts\Prepare-AppPackageFolder.ps1
+                Write-Host "Prepare-AppPackageFolder.ps1 completed" -ForegroundColor Green
+              } catch {
+                Write-Error "Prepare-AppPackageFolder.ps1 failed: $_"
+                Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
+                exit 1
+              }
             } else {
               Write-Error "Neither AppsPrepareList.json nor AppsDownloadList.json found"
               exit 1
@@ -152,6 +168,17 @@ jobs:
           
           # Check results
           Write-Host "`nChecking preparation results:" -ForegroundColor Green
+          Write-Host "Files in current directory after preparation:" -ForegroundColor Gray
+          Get-ChildItem -Name "*.json" | ForEach-Object { Write-Host "  - $_" -ForegroundColor Gray }
+          
+          Write-Host "Checking specific directories:" -ForegroundColor Gray
+          if (Test-Path ".\Publish") {
+            Write-Host "  - Publish folder exists" -ForegroundColor Green
+            Get-ChildItem -Path ".\Publish" -Recurse -Name | ForEach-Object { Write-Host "    - $_" -ForegroundColor Gray }
+          } else {
+            Write-Host "  - Publish folder does not exist" -ForegroundColor Red
+          }
+          
           if (Test-Path ".\AppsPublishList.json") {
             Write-Host "✅ AppsPublishList.json created successfully" -ForegroundColor Green
             $publishApps = Get-Content ".\AppsPublishList.json" | ConvertFrom-Json
@@ -160,7 +187,8 @@ jobs:
               Write-Host "  - $($app.IntuneAppName)" -ForegroundColor Gray
             }
           } else {
-            Write-Warning "⚠️ AppsPublishList.json was not created"
+            Write-Host "⚠️ AppsPublishList.json was not created" -ForegroundColor Red
+            Write-Host "Expected location: $PWD\AppsPublishList.json" -ForegroundColor Gray
           }
 
       - name: Publish to Intune
