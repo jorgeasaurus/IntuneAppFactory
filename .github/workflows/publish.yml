@@ -9,7 +9,7 @@ on:
 jobs:
   process_apps:
     name: Process Applications
-    runs-on: [self-hosted, Windows]
+    runs-on: windows-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
