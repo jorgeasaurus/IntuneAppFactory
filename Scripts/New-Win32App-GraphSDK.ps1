@@ -302,7 +302,7 @@ Process {
             [object]$DetectionRule
         )
 
-        $GraphRules = @()
+        $GraphRules = New-Object System.Collections.ArrayList
         
         Write-Verbose "Processing $($DetectionRule.Count) detection rule(s)"
         
@@ -379,11 +379,12 @@ Process {
             }
             
             if ($GraphRule) {
-                $GraphRules += $GraphRule
+                $GraphRules.Add($GraphRule) | Out-Null
             }
         }
         
-        return $GraphRules
+        # Always return as an array
+        return @($GraphRules)
     }
 
     function Convert-RequirementRuleToGraph {
@@ -396,7 +397,7 @@ Process {
             [object]$CustomRequirementRules
         )
 
-        $GraphRules = @()
+        $GraphRules = New-Object System.Collections.ArrayList
         
         # Only add actual requirement rules, not a base rule
         # Add custom requirement rules
@@ -482,10 +483,11 @@ Process {
                 }
             }
             
-            $GraphRules += $GraphRule
+            $GraphRules.Add($GraphRule) | Out-Null
         }
         
-        return $GraphRules
+        # Always return as an array
+        return @($GraphRules)
     }
 
     # Import required modules
@@ -551,6 +553,11 @@ Process {
             # Convert detection rules to Graph format directly from AppData
             $GraphDetectionRules = Convert-DetectionRuleToGraph -DetectionRule $AppData.DetectionRule
             
+            # Ensure detection rules is always an array
+            if ($GraphDetectionRules -and $GraphDetectionRules -isnot [Array]) {
+                $GraphDetectionRules = @($GraphDetectionRules)
+            }
+            
             if (-not $GraphDetectionRules -or $GraphDetectionRules.Count -eq 0) {
                 Write-Warning "No detection rules were converted successfully. Check App.json configuration."
                 Write-Output -InputObject "Raw detection rules from App.json:"
@@ -606,6 +613,8 @@ Process {
             try {
                 # Create Win32 app
                 Write-Output -InputObject "Creating Win32 application using Graph API"
+                Write-Verbose "Win32AppBody being sent to Graph API:"
+                Write-Verbose ($Win32AppBody | ConvertTo-Json -Depth 5)
                 $Win32App = New-MgDeviceAppManagementMobileApp -BodyParameter $Win32AppBody -ErrorAction Stop
 
                 # Note: File upload requires additional steps using direct Graph API calls
