@@ -208,8 +208,16 @@ jobs:
           WORKSPACE_ID: ${{ secrets.LOG_ANALYTICS_WORKSPACE_ID }}
           SHARED_KEY: ${{ secrets.LOG_ANALYTICS_SHARED_KEY }}
         run: |
-          if (Test-Path ".\AppsPublishList.json") {
-            Write-Host "Publishing applications to Intune..." -ForegroundColor Green
+          Write-Host "Checking for AppsPublishList.json..." -ForegroundColor Cyan
+          if (Test-Path ".\AppsPublishList\AppsPublishList.json") {
+            Write-Host "✅ Found AppsPublishList.json - Publishing applications to Intune..." -ForegroundColor Green
+            
+            # Show what we're about to publish
+            $publishApps = Get-Content ".\AppsPublishList\AppsPublishList.json" | ConvertFrom-Json
+            Write-Host "Publishing $($publishApps.Count) applications:" -ForegroundColor Cyan
+            foreach ($app in $publishApps) {
+              Write-Host "  - $($app.IntuneAppName)" -ForegroundColor Gray
+            }
             
             # Use the Graph SDK version of the script
             .\Scripts\New-Win32App-GraphSDK.ps1 `
@@ -219,6 +227,9 @@ jobs:
               -WorkspaceID $(if ($env:WORKSPACE_ID) { $env:WORKSPACE_ID } else { "dummy" }) `
               -SharedKey $(if ($env:SHARED_KEY) { $env:SHARED_KEY } else { "dummy" }) `
               -Verbose
+          } else {
+            Write-Host "❌ AppsPublishList.json not found - skipping publish step" -ForegroundColor Red
+            Write-Host "Checked location: .\AppsPublishList\AppsPublishList.json" -ForegroundColor Gray
           }
 
       - name: Assign Applications
