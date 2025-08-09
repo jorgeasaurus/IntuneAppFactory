@@ -30,12 +30,12 @@
     ],
     "DetectionRule": [
         {
-            "Type": "Registry",
-            "DetectionMethod": "VersionComparison",
-            "KeyPath": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\###PRODUCTCODE###",
-            "ValueName": "DisplayVersion",
+            "Type": "File",
+            "DetectionMethod": "Version",
+            "Path": "%ProgramFiles%\\7-Zip",
+            "FileOrFolder": "7z.exe",
             "Operator": "greaterThanOrEqual",
-            "Value": "<replaced_by_pipeline>",
+            "VersionValue": "<replaced_by_pipeline>",
             "Check32BitOn64System": "false"
         }
     ],

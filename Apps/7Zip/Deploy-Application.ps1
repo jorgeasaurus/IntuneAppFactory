@@ -146,8 +146,8 @@ Try {
 		
 		## ***********************<PERFORM INSTALLATION TASK HERE>********************
 
-		$msiInstall = "###SETUPFILENAME###"
-		Execute-MSI -Action "Install" -Path "$($dirFiles)\$($msiInstall)" -Parameters "/qn REBOOT=ReallySuppress"
+		$exeInstall = "###SETUPFILENAME###"
+		Execute-Process -Path "$($dirFiles)\$($exeInstall)" -Parameters "/S"
 
 		##*===============================================
 		##* POST-INSTALLATION
