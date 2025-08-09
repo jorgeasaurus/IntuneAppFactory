@@ -10,6 +10,11 @@ jobs:
   process_apps:
     name: Process Applications
     runs-on: windows-latest
+    env:
+      BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
+      BUILD_BINARIESDIRECTORY: ${{ github.workspace }}
+      BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ github.workspace }}
+      PIPELINE_WORKSPACE: ${{ github.workspace }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,7 +23,22 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Installing required PowerShell modules..." -ForegroundColor Green
-          .\Scripts\Install-Modules-GraphSDK.ps1 -Verbose
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          
+          # Install required modules
+          $modules = @(
+            'Evergreen',
+            'Microsoft.Graph.Authentication',
+            'Microsoft.Graph.DeviceManagement',
+            'Microsoft.Graph.DeviceManagement.Actions',
+            'Microsoft.Graph.Groups',
+            'MSAL.PS'
+          )
+          
+          foreach ($module in $modules) {
+            Write-Host "Installing $module..." -ForegroundColor Cyan
+            Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+          }
 
       - name: Test Templates
         shell: pwsh
