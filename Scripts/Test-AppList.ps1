@@ -229,6 +229,7 @@ Process {
                     }
                     "GitHubRelease" {
                         Write-Output -InputObject "Attempting to retrieve app details from GitHub Release"
+
                         $DownloadUrl = "https://github.com/$($App.GitHubRepo)/releases/download/$($App.ReleaseTag)/$($App.SetupFile)"
                         $FileExt = [System.IO.Path]::GetExtension($App.SetupFile).TrimStart('.')
                         # Normalize ReleaseTag to a semantic version string if possible
@@ -241,14 +242,17 @@ Process {
                         }
                         $AppItem = [PSCustomObject]@{
                             Version = $normalizedVersion
+
                             URI = $DownloadUrl
                             InstallerType = $FileExt
                             FileExtension = $FileExt
                         }
+                       
                     "DirectUrl" {
                         Write-Output -InputObject "Using direct download URL"
                         $FileExt = [System.IO.Path]::GetExtension($App.DownloadUrl).TrimStart('.')
                         $AppItem = [PSCustomObject]@{
+
                             Version = $App.Version
                             URI = $App.DownloadUrl
                             InstallerType = $FileExt

@@ -27,7 +27,9 @@ jobs:
         shell: pwsh
         run: |
           Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
+
           Install-Module -Name IntuneWin32App -Force -AllowClobber
+
           Install-Module -Name Evergreen -Force -AllowClobber
           Install-Module -Name MSAL.PS -Force -AllowClobber
 
@@ -47,6 +49,7 @@ jobs:
       - name: Download Installers
         shell: pwsh
         run: ./Scripts/Save-Installer.ps1
+
 
       - name: Prepare App Package Folders
         shell: pwsh
