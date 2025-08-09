@@ -1,70 +1,70 @@
 name: Intune App Factory
 
 on:
-workflow_dispatch:
-schedule:
-- cron: ‘0 */6 * * *’
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
 
 jobs:
-build:
-runs-on: [self-hosted, Windows]
-env:
-BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
-PIPELINE_WORKSPACE: ${{ runner.temp }}
-BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}/artifacts
-BUILD_BINARIESDIRECTORY: ${{ runner.temp }}/binaries
-steps:
-- uses: actions/checkout@v4
-  - name: Prepare directories
-    shell: pwsh
-    run: |
-      New-Item -ItemType Directory -Force -Path "$env:BUILD_BINARIESDIRECTORY" | Out-Null
-      New-Item -ItemType Directory -Force -Path "$env:BUILD_ARTIFACTSTAGINGDIRECTORY" | Out-Null
-      New-Item -ItemType Directory -Force -Path "$env:PIPELINE_WORKSPACE" | Out-Null
-
-  - name: Install PowerShell Modules
-    shell: pwsh
-    run: |
-      Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
-
-      Install-Module -Name IntuneWin32App -RequiredVersion 1.4.0 -Force -AllowClobber
-
-      Install-Module -Name Evergreen -Force -AllowClobber
-      Install-Module -Name MSAL.PS -Force -AllowClobber
-
-  - name: Test App Files
-    shell: pwsh
-    run: ./Scripts/Test-AppFiles.ps1
-
-  - name: Determine Apps to Download
-    shell: pwsh
+  build:
+    runs-on: [self-hosted, Windows]
     env:
-      TENANT_ID: ${{ secrets.TENANT_ID }}
-      CLIENT_ID: ${{ secrets.CLIENT_ID }}
-      CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-    run: |
-      ./Scripts/Test-AppList.ps1 -TenantID $env:TENANT_ID -ClientID $env:CLIENT_ID -ClientSecret $env:CLIENT_SECRET
+      BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
+      PIPELINE_WORKSPACE: ${{ runner.temp }}
+      BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}/artifacts
+      BUILD_BINARIESDIRECTORY: ${{ runner.temp }}/binaries
+    steps:
+      - uses: actions/checkout@v4
 
-  - name: Download Installers
-    shell: pwsh
-    run: ./Scripts/Save-Installer.ps1
+      - name: Prepare directories
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:BUILD_BINARIESDIRECTORY" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:BUILD_ARTIFACTSTAGINGDIRECTORY" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:PIPELINE_WORKSPACE" | Out-Null
 
-  - name: Prepare App Package Folders
-    shell: pwsh
-    run: ./Scripts/Prepare-AppPackageFolder.ps1
+      - name: Install PowerShell Modules
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
 
-  - name: Publish Win32 Apps
-    shell: pwsh
-    env:
-      TENANT_ID: ${{ secrets.TENANT_ID }}
-      CLIENT_ID: ${{ secrets.CLIENT_ID }}
-      CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-    run: |
-      ./Scripts/New-Win32App.ps1 -TenantID $env:TENANT_ID -ClientID $env:CLIENT_ID -ClientSecret $env:CLIENT_SECRET
+          Install-Module -Name IntuneWin32App -RequiredVersion 1.4.0 -Force -AllowClobber
 
-  - name: Upload installers
-    uses: actions/upload-artifact@v4
-    with:
-      name: installers
-      path: ${{ env.PIPELINE_WORKSPACE }}/Installers
+          Install-Module -Name Evergreen -Force -AllowClobber
+          Install-Module -Name MSAL.PS -Force -AllowClobber
 
+      - name: Test App Files
+        shell: pwsh
+        run: ./Scripts/Test-AppFiles.ps1
+
+      - name: Determine Apps to Download
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        run: |
+          ./Scripts/Test-AppList.ps1 -TenantID $env:TENANT_ID -ClientID $env:CLIENT_ID -ClientSecret $env:CLIENT_SECRET
+
+      - name: Download Installers
+        shell: pwsh
+        run: ./Scripts/Save-Installer.ps1
+
+      - name: Prepare App Package Folders
+        shell: pwsh
+        run: ./Scripts/Prepare-AppPackageFolder.ps1
+
+      - name: Publish Win32 Apps
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        run: |
+          ./Scripts/New-Win32App.ps1 -TenantID $env:TENANT_ID -ClientID $env:CLIENT_ID -ClientSecret $env:CLIENT_SECRET
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers
+          path: ${{ env.PIPELINE_WORKSPACE }}/Installers
