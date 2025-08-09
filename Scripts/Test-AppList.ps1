@@ -229,23 +229,27 @@ Process {
                     }
                     "GitHubRelease" {
                         Write-Output -InputObject "Attempting to retrieve app details from GitHub Release"
-                        if (-not (Test-GitHubInputValid -GitHubRepo $App.GitHubRepo -ReleaseTag $App.ReleaseTag -SetupFile $App.SetupFile)) {
-                            Write-Warning -Message "Invalid GitHub input detected for app: $($App.IntuneAppName). Skipping this app. (GitHubRepo: $($App.GitHubRepo), ReleaseTag: $($App.ReleaseTag), SetupFile: $($App.SetupFile))"
-                            continue
-                        }
+
                         $DownloadUrl = "https://github.com/$($App.GitHubRepo)/releases/download/$($App.ReleaseTag)/$($App.SetupFile)"
-                        $FileExtRaw = [System.IO.Path]::GetExtension($App.SetupFile)
-                        $FileExt = if (![string]::IsNullOrEmpty($FileExtRaw)) { $FileExtRaw.TrimStart('.') } else { "" }
+                        $FileExt = [System.IO.Path]::GetExtension($App.SetupFile).TrimStart('.')
+                        # Normalize ReleaseTag to a semantic version string if possible
+                        $normalizedVersion = $null
+                        if ($App.ReleaseTag -match 'v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)') {
+                            $normalizedVersion = $Matches[1]
+                        } else {
+                            Write-Warning -Message "ReleaseTag '$($App.ReleaseTag)' for app '$($App.IntuneAppName)' does not match semantic versioning. Using original tag as version."
+                            $normalizedVersion = $App.ReleaseTag
+                        }
                         $AppItem = [PSCustomObject]@{
-                            Version = $App.ReleaseTag
+                            Version = $normalizedVersion
+
                             URI = $DownloadUrl
                             InstallerType = $FileExt
                             FileExtension = $FileExt
                         }
-                    }
+                       
                     "DirectUrl" {
                         Write-Output -InputObject "Using direct download URL"
-
                         $FileExt = [System.IO.Path]::GetExtension($App.DownloadUrl).TrimStart('.')
                         $AppItem = [PSCustomObject]@{
 

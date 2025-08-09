@@ -5,13 +5,6 @@ on:
   schedule:
     - cron: '0 */6 * * *'
 
-
-env:
-  BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
-  PIPELINE_WORKSPACE: ${{ runner.temp }}
-  BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}/artifacts
-  BUILD_BINARIESDIRECTORY: ${{ runner.temp }}/binaries
-
 jobs:
   build:
     runs-on: [self-hosted, Windows]
@@ -34,7 +27,9 @@ jobs:
         shell: pwsh
         run: |
           Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
+
           Install-Module -Name IntuneWin32App -RequiredVersion 1.4.0 -Force -AllowClobber
+
           Install-Module -Name Evergreen -Force -AllowClobber
           Install-Module -Name MSAL.PS -Force -AllowClobber
 
