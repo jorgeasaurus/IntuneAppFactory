@@ -243,7 +243,7 @@ Process {
             Create the Win32 LOB app body for Graph API.
         #>
         param(
-            [hashtable]$AppData,
+            [PSCustomObject]$AppData,
             [string]$DisplayName,
             [string]$FileName,
             [hashtable]$FileEncryptionInfo,
