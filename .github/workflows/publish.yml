@@ -123,6 +123,20 @@ jobs:
             
             # Run the prepare script once (it processes all apps)
             .\Scripts\Prepare-AppPackageFolder.ps1
+            
+            # Check if AppsPublishList.json was created
+            if (Test-Path ".\AppsPublishList.json") {
+              Write-Host "AppsPublishList.json created successfully" -ForegroundColor Green
+              $publishApps = Get-Content ".\AppsPublishList.json" | ConvertFrom-Json
+              Write-Host "Found $($publishApps.Count) apps ready for publishing:" -ForegroundColor Green
+              foreach ($app in $publishApps) {
+                Write-Host "  - $($app.IntuneAppName)" -ForegroundColor Gray
+              }
+            } else {
+              Write-Warning "AppsPublishList.json was not created by Prepare-AppPackageFolder.ps1"
+            }
+          } else {
+            Write-Warning "AppsPrepareList.json not found, skipping package preparation"
           }
 
       - name: Publish to Intune
