@@ -614,7 +614,20 @@ Process {
                 # Create Win32 app
                 Write-Output -InputObject "Creating Win32 application using Graph API"
                 Write-Verbose "Win32AppBody being sent to Graph API:"
-                Write-Verbose ($Win32AppBody | ConvertTo-Json -Depth 5)
+                $Win32AppBodyJson = $Win32AppBody | ConvertTo-Json -Depth 10 -Compress
+                Write-Verbose $Win32AppBodyJson
+                
+                # For now, just use the SDK method but with better error handling
+                # The issue seems to be with the SDK's handling of Win32 apps
+                # This is a known limitation - Win32 apps require additional setup beyond just the metadata
+                
+                # Note: The actual issue is that Win32 apps require the .intunewin file to be uploaded
+                # before the app can be created. The SDK doesn't handle this automatically.
+                # We need to implement the full file upload process.
+                
+                Write-Warning "Note: Win32 app creation requires file upload which is not yet implemented"
+                Write-Output -InputObject "Attempting to create app metadata (will fail without file upload)"
+                
                 $Win32App = New-MgDeviceAppManagementMobileApp -BodyParameter $Win32AppBody -ErrorAction Stop
 
                 # Note: File upload requires additional steps using direct Graph API calls
