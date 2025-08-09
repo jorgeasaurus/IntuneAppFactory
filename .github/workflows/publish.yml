@@ -199,6 +199,27 @@ jobs:
             Write-Host "Expected location: $PWD\AppsPublishList.json" -ForegroundColor Gray
           }
 
+      - name: Download IntuneWinAppUtil
+        shell: pwsh
+        run: |
+          Write-Host "Downloading IntuneWinAppUtil.exe..." -ForegroundColor Cyan
+          $IntuneWinAppUtilPath = "${{ github.workspace }}\IntuneWinAppUtil.exe"
+          
+          if (-not (Test-Path $IntuneWinAppUtilPath)) {
+            $ProgressPreference = 'SilentlyContinue'
+            $url = "https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe"
+            
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $IntuneWinAppUtilPath -UseBasicParsing
+              Write-Host "✅ Successfully downloaded IntuneWinAppUtil.exe" -ForegroundColor Green
+            } catch {
+              Write-Error "Failed to download IntuneWinAppUtil.exe: $_"
+              exit 1
+            }
+          } else {
+            Write-Host "✅ IntuneWinAppUtil.exe already exists" -ForegroundColor Green
+          }
+
       - name: Publish to Intune
         shell: pwsh
         env:
