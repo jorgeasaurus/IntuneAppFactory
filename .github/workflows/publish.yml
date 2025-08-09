@@ -186,6 +186,14 @@ jobs:
             foreach ($app in $publishApps) {
               Write-Host "  - $($app.IntuneAppName)" -ForegroundColor Gray
             }
+            
+            # Move AppsPublishList.json to the location expected by New-Win32App-GraphSDK.ps1
+            Write-Host "Moving AppsPublishList.json to expected location..." -ForegroundColor Cyan
+            if (-not (Test-Path ".\AppsPublishList")) {
+              New-Item -ItemType Directory -Path ".\AppsPublishList" -Force | Out-Null
+            }
+            Move-Item -Path ".\AppsPublishList.json" -Destination ".\AppsPublishList\AppsPublishList.json" -Force
+            Write-Host "AppsPublishList.json moved to .\AppsPublishList\AppsPublishList.json" -ForegroundColor Green
           } else {
             Write-Host "⚠️ AppsPublishList.json was not created" -ForegroundColor Red
             Write-Host "Expected location: $PWD\AppsPublishList.json" -ForegroundColor Gray
