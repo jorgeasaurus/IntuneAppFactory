@@ -23,6 +23,7 @@
     1.0.4 - (2024-03-07) Added support for empty filter options in Get-EvergreenAppItem function
     1.0.5 - (2024-08-25) Added function to test and convert version strings with invalid characters to improve version comparison for detected applications in Intune.
                          Improved application detection logic using the new naming convention property specified in the appList.json file.
+    1.0.6 - (2024-09-03) Removed Azure Storage Account support and added GitHub Release and DirectUrl sources
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param (
@@ -36,11 +37,7 @@ param (
 
     [parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$ClientSecret,
-
-    [parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
-    [string]$StorageAccountAccessKey
+    [string]$ClientSecret
 )
 Process {
     # Functions
@@ -180,101 +177,34 @@ Process {
         }
     }
 
-    function Get-AzureBlobContent {
-        param(
-            [parameter(Mandatory = $true, HelpMessage = "Existing context of the Azure Storage Account.")]
-            [ValidateNotNullOrEmpty()]
-            [System.Object]$StorageAccountContext,
-    
-            [parameter(Mandatory = $true, HelpMessage = "Name of the Azure Storage Blob container.")]
-            [ValidateNotNullOrEmpty()]
-            [string]$ContainerName
-        )
-        try {   
-            # Construct array list for return value containing file names
-            $BlobList = New-Object -TypeName "System.Collections.ArrayList"
-    
-            try {
-                # Retrieve content from storage account blob
-                $StorageBlobContents = Get-AzStorageBlob -Container $ContainerName -Context $StorageAccountContext -ErrorAction Stop
-                if ($StorageBlobContents -ne $null) {
-                    foreach ($StorageBlobContent in $StorageBlobContents) {
-                        Write-Output -InputObject "Adding content file to return list: $($StorageBlobContent.Name)"
-                        $BlobList.Add($StorageBlobContent) | Out-Null
-                    }
-                }
-    
-                # Handle return value
-                return $BlobList
-            }
-            catch [System.Exception] {
-                Write-Warning -Message "Failed to retrieve storage account blob contents. Error message: $($_.Exception.Message)"
-            }
-        }
-        catch [System.Exception] {
-            Write-Warning -Message "Failed to retrieve storage account context. Error message: $($_.Exception.Message)"
-        }
-    }
 
-    function Get-StorageAccountAppItem {
+    function Get-AccessToken {
         param (
-            [parameter(Mandatory = $true, HelpMessage = "Specify the storage account name.")]
+            [parameter(Mandatory = $true)]
             [ValidateNotNullOrEmpty()]
-            [string]$StorageAccountName,
-    
-            [parameter(Mandatory = $true, HelpMessage = "Specify the storage account container name.")]
+            [string]$TenantID,
+
+            [parameter(Mandatory = $true)]
             [ValidateNotNullOrEmpty()]
-            [string]$ContainerName
+            [string]$ClientID,
+
+            [parameter(Mandatory = $true)]
+            [ValidateNotNullOrEmpty()]
+            [string]$ClientSecret
         )
         process {
-            # Create storage account context using access key
-            $StorageAccountContext = New-AzStorageContext -StorageAccountName $StorageAccountName -StorageAccountKey $StorageAccountAccessKey
-    
-            # Retrieve all storage account blob items in container
-            $BlobItems = Get-AzureBlobContent -StorageAccountContext $StorageAccountContext -ContainerName $ContainerName
-            if ($BlobItems -ne $null) {
-                # Read the contents of the latest.json file
-                $LatestFile = $BlobItems | Where-Object { $PSItem.Name -like "latest.json" }
-                if ($LatestFile -ne $null) {
-                    # Construct temporary latest.json file destination
-                    $LatestSetupFileDestination = Join-Path -Path $env:PIPELINE_WORKSPACE -ChildPath (Join-Path -Path "LatestFiles" -ChildPath $ContainerName)
-                    if (-not(Test-Path -Path $LatestSetupFileDestination)) {
-                        New-Item -Path $LatestSetupFileDestination -ItemType "Directory" | Out-Null
-                    }
-    
-                    # Retrieve the latest.json file content and convert from JSON
-                    $LatestSetupFile = Get-AzStorageBlobContent -Context $StorageAccountContext -Container $ContainerName -Blob "latest.json" -Destination $LatestSetupFileDestination -Force
-                    $LatestSetupFilePath = Join-Path -Path $LatestSetupFileDestination -ChildPath "latest.json"
-                    if (Test-Path -Path $LatestSetupFilePath) {
-                        $LatestSetupFileContent = Get-Content -Path $LatestSetupFilePath | ConvertFrom-Json
-    
-                        # Get the latest modified setup file
-                        $BlobItem = $BlobItems | Where-Object { (([System.IO.Path]::GetExtension($PSItem.Name)) -match ".msi|.exe|.zip") -and ($PSItem.Name -like $LatestSetupFileContent.SetupName) } | Sort-Object -Property "LastModified" -Descending | Select-Object -First 1
-                        if ($BlobItem -ne $null) {
-                            # Construct custom object for return value
-                            $PSObject = [PSCustomObject]@{
-                                "Version" = $LatestSetupFileContent.SetupVersion
-                                "URI" = -join@($StorageAccountContext.BlobEndPoint, $ContainerName, "/", $BlobItem.Name)
-                                "BlobName" = $BlobItem.Name
-                            }
-            
-                            # Handle return value
-                            return $PSObject
-                        }
-                        else {
-                            Write-Warning -Message "Could not find blob file in container with name from latest.json: $($LatestSetupFileContent.SetupName)"
-                        }
-                    }
-                    else {
-                        Write-Warning -Message "Could not locate latest.json file after attempted download from storage account container"
-                    }
+            try {
+                $Body = @{
+                    client_id     = $ClientID
+                    client_secret = $ClientSecret
+                    scope         = "https://graph.microsoft.com/.default"
+                    grant_type    = "client_credentials"
                 }
-                else {
-                    Write-Warning -Message "Could not find latest.json file in container: $($ContainerName)"
-                }
+                $Response = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$TenantID/oauth2/v2.0/token" -Body $Body -ContentType "application/x-www-form-urlencoded"
+                return $Response.access_token
             }
-            else {
-                Write-Warning -Message "Could not find a setup file in container: $($ContainerName)"
+            catch {
+                throw "Get-AccessToken: Failed to retrieve authentication token with error message: $($_.Exception.Message)"
             }
         }
     }
@@ -328,9 +258,26 @@ Process {
                             $AppItem = Get-EvergreenAppItem -AppId $App.AppId
                         }
                     }
-                    "StorageAccount" {
-                        Write-Output -InputObject "Attempting to retrieve app details from Storage Account"
-                        $AppItem = Get-StorageAccountAppItem -StorageAccountName $App.StorageAccountName -ContainerName $App.StorageAccountContainerName
+                    "GitHubRelease" {
+                        Write-Output -InputObject "Attempting to retrieve app details from GitHub Release"
+                        $DownloadUrl = "https://github.com/$($App.GitHubRepo)/releases/download/$($App.ReleaseTag)/$($App.SetupFile)"
+                        $FileExt = [System.IO.Path]::GetExtension($App.SetupFile).TrimStart('.')
+                        $AppItem = [PSCustomObject]@{
+                            Version = $App.ReleaseTag
+                            URI = $DownloadUrl
+                            InstallerType = $FileExt
+                            FileExtension = $FileExt
+                        }
+                    }
+                    "DirectUrl" {
+                        Write-Output -InputObject "Using direct download URL"
+                        $FileExt = [System.IO.Path]::GetExtension($App.DownloadUrl).TrimStart('.')
+                        $AppItem = [PSCustomObject]@{
+                            Version = $App.Version
+                            URI = $App.DownloadUrl
+                            InstallerType = $FileExt
+                            FileExtension = $FileExt
+                        }
                     }
                 }
 
@@ -438,9 +385,6 @@ Process {
                                     "URI" = $AppItem.URI
                                     "InstallerType" = $AppItem.InstallerType
                                     "FileExtension" = $AppItem.FileExtension
-                                    "StorageAccountName" = if (-not([string]::IsNullOrEmpty($App.StorageAccountName))) { $App.StorageAccountName } else { [string]::Empty }
-                                    "StorageAccountContainerName" = if (-not([string]::IsNullOrEmpty($App.StorageAccountContainerName))) { $App.StorageAccountContainerName } else { [string]::Empty }
-                                    "BlobName" = if ($AppItem.BlobName -ne $null) { $AppItem.BlobName } else { [string]::Empty }
                                     "IconURL" = $App.IconURL
                                 }
     
@@ -470,9 +414,8 @@ Process {
                 }
             }
             catch [System.Exception] {
-                Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
                 Write-Warning -Message "Failed to retrieve app source details using method '$($App.AppSource)' for app: $($App.IntuneAppName). Error message: $($_.Exception.Message)"
-                
+
                 # Handle current application output completed message
                 Write-Output -InputObject "[APPLICATION: $($App.IntuneAppName)] - Skipped"
             }
@@ -490,15 +433,9 @@ Process {
         if ($AppsDownloadList.Count -eq 0) {
             # Don't allow pipeline to continue
             Write-Output -InputObject "No new applications to be published, aborting pipeline"
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
-        }
-        else {
-            # Allow pipeline to continue
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]true"
         }
     }
     catch [System.Exception] {
-        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
         throw "$($MyInvocation.MyCommand): Failed to retrieve authentication token with error message: $($_.Exception.Message)"
     }
 }

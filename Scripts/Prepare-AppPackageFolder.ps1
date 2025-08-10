@@ -150,7 +150,6 @@ Process {
                                         $DetectionRuleItem.ProductCode = $ProductCode
                                     }
                                     else {
-                                        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
                                         throw "$($MyInvocation.MyCommand): Failed to retrieve MSI meta data value for ProductCode"
                                     }
 
@@ -160,7 +159,6 @@ Process {
                                         $DetectionRuleItem.ProductVersion = $ProductVersion
                                     }
                                     else {
-                                        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
                                         throw "$($MyInvocation.MyCommand): Failed to retrieve MSI meta data value for ProductVersion"
                                     }
                                 }
@@ -316,15 +314,9 @@ Process {
         if ($AppsPublishList.Count -eq 0) {
             # Don't allow pipeline to continue
             Write-Output -InputObject "No new applications to be published, aborting pipeline"
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
-        }
-        else {
-            # Allow pipeline to continue
-            Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]true"
         }
     }
     else {
         Write-Output -InputObject "Failed to locate required $($AppsPrepareListFileName) file in build artifacts staging directory, aborting pipeline"
-        Write-Output -InputObject "##vso[task.setvariable variable=shouldrun;isOutput=true]false"
     }
 }

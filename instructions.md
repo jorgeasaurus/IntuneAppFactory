@@ -25,8 +25,8 @@ The following secrets need to be migrated from Azure DevOps variable groups to G
 
 **Note:** This implementation does not require Azure Storage Account secrets as we're using GitHub Releases for file storage.
 
-### 3. Self-Hosted Runner Setup
-IntuneAppFactory requires a self-hosted runner (agent) because it needs to:
+### 3. Runner Requirements
+IntuneAppFactory runs on a GitHub-hosted Windows runner that can:
 - Run PowerShell scripts
 - Access local tools like IntuneWinAppUtil.exe
 - Handle file packaging operations
@@ -52,7 +52,7 @@ jobs:
   # Phase 1: Test Applications
   test_apps:
     name: Test Applications
-    runs-on: [self-hosted, Windows]
+      runs-on: windows-latest
     outputs:
       apps_to_process: ${{ steps.test_apps.outputs.apps_to_process }}
     steps:
@@ -127,7 +127,7 @@ jobs:
   package_apps:
     name: Package Applications
     needs: test_apps
-    runs-on: [self-hosted, Windows]
+      runs-on: windows-latest
     if: success() && needs.test_apps.outputs.apps_to_process != '[]'
     steps:
       - name: Checkout repository
@@ -233,7 +233,7 @@ jobs:
   publish_apps:
     name: Publish Applications to Intune
     needs: [test_apps, package_apps]
-    runs-on: [self-hosted, Windows]
+      runs-on: windows-latest
     if: success()
     steps:
       - name: Checkout repository
@@ -346,7 +346,7 @@ jobs:
   assign_apps:
     name: Assign Applications
     needs: publish_apps
-    runs-on: [self-hosted, Windows]
+      runs-on: windows-latest
     if: success()
     steps:
       - name: Checkout repository
@@ -699,7 +699,7 @@ Get-IntuneWin32App
 
 ### Cost Considerations
 - **GitHub Actions**: Free for public repos, included minutes for private
-- **Self-Hosted Runners**: No GitHub costs, but infrastructure costs
+- **GitHub-Hosted Runners**: Included minutes for public repos; pay-as-you-go for private
 - **GitHub Releases**: Free storage, bandwidth limits apply
 - **No Azure Storage costs**: Significant savings for large deployments
 
