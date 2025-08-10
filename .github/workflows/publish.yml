@@ -1,308 +1,144 @@
-name: Intune App Factory
+name: Package & Deploy Win32 app to Intune
 
 on:
-  schedule:
-    # Run every 6 hours
-    - cron: '0 */6 * * *'
   workflow_dispatch:
+    inputs:
+      appName:
+        description: "Display name in Intune"
+        required: true
+      sourceFolder:
+        description: "Folder containing installer and any files (e.g., Apps/MyApp)"
+        required: true
+      setupFile:
+        description: "Installer file name (e.g., setup.msi or setup.exe)"
+        required: true
+      installCmd:
+        description: "Silent install command"
+        required: true
+      uninstallCmd:
+        description: "Silent uninstall command"
+        required: true
+      detectionRule:
+        description: "Example: MSI ProductCode={GUID} OR File=C:\\Path\\app.exe,Version>=1.2.3"
+        required: true
+      assignGroupId:
+        description: "ObjectId of AAD group to Required-assign"
+        required: true
 
 jobs:
-  process_apps:
-    name: Process Applications
+  build-deploy:
     runs-on: windows-latest
+
     env:
-      BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
-      BUILD_BINARIESDIRECTORY: ${{ github.workspace }}
-      BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ github.workspace }}
-      PIPELINE_WORKSPACE: ${{ github.workspace }}
+      TENANT_ID: ${{ secrets.INTUNE_TENANT_ID }}
+      CLIENT_ID: ${{ secrets.INTUNE_CLIENT_ID }}
+      CLIENT_SECRET: ${{ secrets.INTUNE_CLIENT_SECRET }}
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install PowerShell Modules
+      - name: Create working dirs
         shell: pwsh
         run: |
-          Write-Host "Installing required PowerShell modules..." -ForegroundColor Green
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          
-          # Install required modules
-          $modules = @(
-            'Evergreen',
-            'Microsoft.Graph.Authentication',
-            'Microsoft.Graph.DeviceManagement',
-            'Microsoft.Graph.DeviceManagement.Actions',
-            'Microsoft.Graph.Groups',
-            'MSAL.PS'
-          )
-          
-          foreach ($module in $modules) {
-            Write-Host "Installing $module..." -ForegroundColor Cyan
-            Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\prep" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\out"  | Out-Null
+
+      - name: Download Win32 Content Prep Tool
+        shell: pwsh
+        run: |
+          # Pull latest release asset for IntuneWinAppUtil.exe
+          $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/microsoft/Microsoft-Win32-Content-Prep-Tool/releases/latest"
+          $asset    = $releases.assets | Where-Object name -match "IntuneWinAppUtil"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$env:RUNNER_TEMP\prep\IntuneWinAppUtil.exe"
+
+      - name: Package to .intunewin
+        shell: pwsh
+        run: |
+          $src = Join-Path $pwd ( "${{ github.event.inputs.sourceFolder }}" )
+          & "$env:RUNNER_TEMP\prep\IntuneWinAppUtil.exe" `
+            -c $src `
+            -s "${{ github.event.inputs.setupFile }}" `
+            -o "$env:RUNNER_TEMP\out" `
+            -q
+          Get-ChildItem "$env:RUNNER_TEMP\out" -Filter *.intunewin | Select-Object -First 1 | ForEach-Object {
+            Write-Host "INTUNEWIN=$($_.FullName)"
+            echo "INTUNEWIN_PATH=$($_.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
           }
 
-      - name: Test Templates
+      - name: Install required PowerShell modules
         shell: pwsh
         run: |
-          Write-Host "Testing template files..." -ForegroundColor Green
-          $result = & .\Scripts\Test-TemplatesFolder.ps1
-          Write-Output $result
-          if ($result -match "aborting pipeline") {
-            Write-Error "Template validation failed - missing required files"
-            exit 1
-          }
-          Write-Host "Template validation passed" -ForegroundColor Green
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Microsoft.Graph.Authentication -Force -Scope CurrentUser
+          Install-Module Microsoft.Graph.Beta -Force -Scope CurrentUser
+          Install-Module IntuneWin32App -Force -Scope CurrentUser
+        # IntuneWin32App wraps packaging/upload/assignment against Graph.  [oai_citation:2‡GitHub](https://github.com/MSEndpointMgr/IntuneWin32App?utm_source=chatgpt.com)
 
-      - name: Test App Files
-        shell: pwsh
-        run: |
-          Write-Host "Validating app configurations..." -ForegroundColor Green
-          & .\Scripts\Test-AppFiles.ps1
-          
-          # Move AppsProcessList.json to expected location
-          if (Test-Path ".\AppsProcessList.json") {
-            New-Item -ItemType Directory -Path ".\AppsProcessList" -Force | Out-Null
-            Move-Item -Path ".\AppsProcessList.json" -Destination ".\AppsProcessList\AppsProcessList.json" -Force
-          }
-          
-      - name: Test and Check Applications
+      - name: Upload app to Intune and assign
         shell: pwsh
         env:
-          TENANT_ID: ${{ secrets.TENANT_ID }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          APP_NAME: ${{ github.event.inputs.appName }}
+          INSTALL_CMD: ${{ github.event.inputs.installCmd }}
+          UNINSTALL_CMD: ${{ github.event.inputs.uninstallCmd }}
+          DETECTION: ${{ github.event.inputs.detectionRule }}
+          ASSIGN_GROUP: ${{ github.event.inputs.assignGroupId }}
+          INTUNEWIN: ${{ env.INTUNEWIN_PATH }}
         run: |
-          Write-Host "Checking for new application versions..." -ForegroundColor Green
-          
-          # Test app configurations and check for new versions
-          .\Scripts\Test-AppList.ps1 `
-            -TenantID $env:TENANT_ID `
-            -ClientID $env:CLIENT_ID `
-            -ClientSecret $env:CLIENT_SECRET `
-            -Verbose
-          
-          # Check if any apps need processing
-          if (Test-Path ".\AppsDownloadList.json") {
-            $apps = Get-Content ".\AppsDownloadList.json" | ConvertFrom-Json
-            if ($apps.Count -eq 0) {
-              Write-Host "No applications need updating" -ForegroundColor Yellow
-              exit 0
-            }
-            Write-Host "Found $($apps.Count) applications to process" -ForegroundColor Green
+          # Authenticate to Graph (app-only)
+          $secure = ConvertTo-SecureString $env:CLIENT_SECRET -AsPlainText -Force
+          $cred   = New-Object System.Management.Automation.PSCredential ($env:CLIENT_ID, $secure)
+          Connect-MgGraph -TenantId $env:TENANT_ID -ClientSecretCredential $cred -NoWelcome
+          Select-MgProfile -Name "beta"
+
+          Import-Module IntuneWin32App
+
+          # Build detection rules
+          $detectionRules = @()
+          if ($env:DETECTION -match '^MSI\s+ProductCode\s*=\s*{') {
+            $guid = ($env:DETECTION -replace '.*{','' -replace '}.*','')
+            $detectionRules += New-IntuneWin32AppDetectionRuleMSI -ProductCode "{$guid}"
+          } elseif ($env:DETECTION -match '^File=') {
+            $parts = $env:DETECTION -replace '^File=','' -split ','
+            $path  = $parts[0]
+            $ver   = ($parts | Where-Object {$_ -like 'Version*'}) -replace 'Version=',''
+            $detectionRules += New-IntuneWin32AppDetectionRuleFile -Path (Split-Path $path) -FileOrFolder (Split-Path $path -Leaf) -Operator GreaterThanOrEqual -Version $ver
           } else {
-            Write-Host "No applications to process" -ForegroundColor Yellow
-            exit 0
+            throw "Unsupported detectionRule format: $env:DETECTION"
           }
 
-      - name: Download Applications
-        shell: pwsh
-        run: |
-          if (Test-Path ".\AppsDownloadList.json") {
-            Write-Host "Downloading application installers..." -ForegroundColor Green
-            
-            # Move AppsDownloadList.json to expected location
-            if (-not (Test-Path ".\AppsDownloadList")) {
-              New-Item -ItemType Directory -Path ".\AppsDownloadList" -Force | Out-Null
-            }
-            Copy-Item -Path ".\AppsDownloadList.json" -Destination ".\AppsDownloadList\AppsDownloadList.json" -Force
-            
-            # Run the download script once (it processes all apps)
-            .\Scripts\Save-Installer.ps1
+          # Create or update the Win32 LOB app
+          $appParams = @{
+            DisplayName             = $env:APP_NAME
+            Description             = "Deployed via GitHub Actions"
+            Publisher               = "Your Org"
+            InstallCommandLine      = $env:INSTALL_CMD
+            UninstallCommandLine    = $env:UNINSTALL_CMD
+            DetectionRules          = $detectionRules
+            InstallExperience       = "system"
+            RestartBehavior         = "suppress"
+            IntuneWinFile           = $env:INTUNEWIN
           }
 
-      - name: Prepare Application Packages
-        shell: pwsh
-        run: |
-          Write-Host "Checking for files to prepare packages..." -ForegroundColor Green
-          Write-Host "Current directory contents:" -ForegroundColor Gray
-          Get-ChildItem -Name "*.json" | ForEach-Object { Write-Host "  - $_" -ForegroundColor Gray }
-          
-          # The Save-Installer script should create AppsPrepareList.json
-          if (Test-Path ".\AppsPrepareList.json") {
-            Write-Host "Found AppsPrepareList.json, preparing application packages..." -ForegroundColor Green
-            
-            # Move AppsPrepareList.json to expected location
-            if (-not (Test-Path ".\AppsPrepareList")) {
-              New-Item -ItemType Directory -Path ".\AppsPrepareList" -Force | Out-Null
-            }
-            Move-Item -Path ".\AppsPrepareList.json" -Destination ".\AppsPrepareList\AppsPrepareList.json" -Force
-            
-            # Run the prepare script with error handling
-            try {
-              Write-Host "Running Prepare-AppPackageFolder.ps1..." -ForegroundColor Cyan
-              .\Scripts\Prepare-AppPackageFolder.ps1
-              Write-Host "Prepare-AppPackageFolder.ps1 completed" -ForegroundColor Green
-            } catch {
-              Write-Error "Prepare-AppPackageFolder.ps1 failed: $_"
-              Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
-              exit 1
-            }
+          $existing = Get-IntuneWin32App | Where-Object DisplayName -eq $env:APP_NAME
+          if ($existing) {
+              Write-Host "App exists. Updating content…"
+              Update-IntuneWin32App @appParams -Id $existing.Id -Verbose
+              $appId = $existing.Id
           } else {
-            Write-Host "AppsPrepareList.json not found. Using AppsDownloadList.json as fallback..." -ForegroundColor Yellow
-            
-            if (Test-Path ".\AppsDownloadList.json") {
-              # Create AppsPrepareList.json from AppsDownloadList.json
-              $downloadList = Get-Content ".\AppsDownloadList.json" | ConvertFrom-Json
-              $downloadList | ConvertTo-Json -Depth 10 | Out-File -FilePath ".\AppsPrepareList.json" -Encoding UTF8
-              
-              # Move to expected location
-              if (-not (Test-Path ".\AppsPrepareList")) {
-                New-Item -ItemType Directory -Path ".\AppsPrepareList" -Force | Out-Null
-              }
-              Move-Item -Path ".\AppsPrepareList.json" -Destination ".\AppsPrepareList\AppsPrepareList.json" -Force
-              
-              # Run the prepare script with error handling
-              try {
-                Write-Host "Running Prepare-AppPackageFolder.ps1 (fallback)..." -ForegroundColor Cyan
-                .\Scripts\Prepare-AppPackageFolder.ps1
-                Write-Host "Prepare-AppPackageFolder.ps1 completed" -ForegroundColor Green
-              } catch {
-                Write-Error "Prepare-AppPackageFolder.ps1 failed: $_"
-                Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
-                exit 1
-              }
-            } else {
-              Write-Error "Neither AppsPrepareList.json nor AppsDownloadList.json found"
-              exit 1
-            }
-          }
-          
-          # Check results
-          Write-Host "`nChecking preparation results:" -ForegroundColor Green
-          Write-Host "Files in current directory after preparation:" -ForegroundColor Gray
-          Get-ChildItem -Name "*.json" | ForEach-Object { Write-Host "  - $_" -ForegroundColor Gray }
-          
-          Write-Host "Checking specific directories:" -ForegroundColor Gray
-          if (Test-Path ".\Publish") {
-            Write-Host "  - Publish folder exists" -ForegroundColor Green
-            Get-ChildItem -Path ".\Publish" -Recurse -Name | ForEach-Object { Write-Host "    - $_" -ForegroundColor Gray }
-          } else {
-            Write-Host "  - Publish folder does not exist" -ForegroundColor Red
-          }
-          
-          if (Test-Path ".\AppsPublishList.json") {
-            Write-Host "✅ AppsPublishList.json created successfully" -ForegroundColor Green
-            $publishApps = Get-Content ".\AppsPublishList.json" | ConvertFrom-Json
-            Write-Host "Found $($publishApps.Count) apps ready for publishing:" -ForegroundColor Green
-            foreach ($app in $publishApps) {
-              Write-Host "  - $($app.IntuneAppName)" -ForegroundColor Gray
-            }
-            
-            # Move AppsPublishList.json to the location expected by New-Win32App-GraphSDK.ps1
-            Write-Host "Moving AppsPublishList.json to expected location..." -ForegroundColor Cyan
-            if (-not (Test-Path ".\AppsPublishList")) {
-              New-Item -ItemType Directory -Path ".\AppsPublishList" -Force | Out-Null
-            }
-            Move-Item -Path ".\AppsPublishList.json" -Destination ".\AppsPublishList\AppsPublishList.json" -Force
-            Write-Host "AppsPublishList.json moved to .\AppsPublishList\AppsPublishList.json" -ForegroundColor Green
-          } else {
-            Write-Host "⚠️ AppsPublishList.json was not created" -ForegroundColor Red
-            Write-Host "Expected location: $PWD\AppsPublishList.json" -ForegroundColor Gray
+              Write-Host "Creating app…"
+              $created = Add-IntuneWin32App @appParams -Verbose
+              $appId = $created.Id
           }
 
-      - name: Download IntuneWinAppUtil
-        shell: pwsh
-        run: |
-          Write-Host "Downloading IntuneWinAppUtil.exe..." -ForegroundColor Cyan
-          $IntuneWinAppUtilPath = "${{ github.workspace }}\IntuneWinAppUtil.exe"
-          
-          if (-not (Test-Path $IntuneWinAppUtilPath)) {
-            $ProgressPreference = 'SilentlyContinue'
-            $url = "https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe"
-            
-            try {
-              Invoke-WebRequest -Uri $url -OutFile $IntuneWinAppUtilPath -UseBasicParsing
-              Write-Host "✅ Successfully downloaded IntuneWinAppUtil.exe" -ForegroundColor Green
-            } catch {
-              Write-Error "Failed to download IntuneWinAppUtil.exe: $_"
-              exit 1
-            }
-          } else {
-            Write-Host "✅ IntuneWinAppUtil.exe already exists" -ForegroundColor Green
+          # Required assignment to AAD group
+          if ($env:ASSIGN_GROUP) {
+            Add-IntuneWin32AppAssignment -Id $appId -GroupId $env:ASSIGN_GROUP -Intent "required" -Verbose
           }
 
-      - name: Publish to Intune
-        shell: pwsh
-        env:
-          TENANT_ID: ${{ secrets.TENANT_ID }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          WORKSPACE_ID: ${{ secrets.LOG_ANALYTICS_WORKSPACE_ID }}
-          SHARED_KEY: ${{ secrets.LOG_ANALYTICS_SHARED_KEY }}
-        run: |
-          Write-Host "Checking for AppsPublishList.json..." -ForegroundColor Cyan
-          if (Test-Path ".\AppsPublishList\AppsPublishList.json") {
-            Write-Host "✅ Found AppsPublishList.json - Publishing applications to Intune..." -ForegroundColor Green
-            
-            # Show what we're about to publish
-            $publishApps = Get-Content ".\AppsPublishList\AppsPublishList.json" | ConvertFrom-Json
-            Write-Host "Publishing $($publishApps.Count) applications:" -ForegroundColor Cyan
-            foreach ($app in $publishApps) {
-              Write-Host "  - $($app.IntuneAppName)" -ForegroundColor Gray
-            }
-            
-            # Use the Graph SDK version of the script
-            .\Scripts\New-Win32App-GraphSDK.ps1 `
-              -TenantID $env:TENANT_ID `
-              -ClientID $env:CLIENT_ID `
-              -ClientSecret $env:CLIENT_SECRET `
-              -WorkspaceID $(if ($env:WORKSPACE_ID) { $env:WORKSPACE_ID } else { "dummy" }) `
-              -SharedKey $(if ($env:SHARED_KEY) { $env:SHARED_KEY } else { "dummy" }) `
-              -Verbose
-          } else {
-            Write-Host "❌ AppsPublishList.json not found - skipping publish step" -ForegroundColor Red
-            Write-Host "Checked location: .\AppsPublishList\AppsPublishList.json" -ForegroundColor Gray
-          }
-
-      - name: Assign Applications
-        shell: pwsh
-        env:
-          TENANT_ID: ${{ secrets.TENANT_ID }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          WORKSPACE_ID: ${{ secrets.LOG_ANALYTICS_WORKSPACE_ID }}
-          SHARED_KEY: ${{ secrets.LOG_ANALYTICS_SHARED_KEY }}
-        run: |
-          if (Test-Path ".\AppsAssignmentList.json") {
-            Write-Host "Assigning applications..." -ForegroundColor Green
-            
-            # Use the Graph SDK version of the script
-            .\Scripts\New-AppAssignment-GraphSDK.ps1 `
-              -TenantID $env:TENANT_ID `
-              -ClientID $env:CLIENT_ID `
-              -ClientSecret $env:CLIENT_SECRET `
-              -WorkspaceID $(if ($env:WORKSPACE_ID) { $env:WORKSPACE_ID } else { "dummy" }) `
-              -SharedKey $(if ($env:SHARED_KEY) { $env:SHARED_KEY } else { "dummy" }) `
-              -Verbose
-          }
-
-      - name: Cleanup
+      - name: Upload artifacts
         if: always()
-        shell: pwsh
-        run: |
-          Write-Host "Cleaning up temporary files..." -ForegroundColor Green
-          
-          # Remove temporary files
-          $tempFiles = @(
-            ".\AppsDownloadList.json",
-            ".\AppsPublishList.json", 
-            ".\AppsAssignmentList.json",
-            ".\AppsProcessList.json"
-          )
-          
-          foreach ($file in $tempFiles) {
-            if (Test-Path $file) {
-              Remove-Item $file -Force
-              Write-Host "Removed: $file" -ForegroundColor Gray
-            }
-          }
-          
-          # Clean up download folders
-          if (Test-Path ".\Downloads") {
-            Remove-Item ".\Downloads" -Recurse -Force
-            Write-Host "Removed Downloads folder" -ForegroundColor Gray
-          }
-          
-          if (Test-Path ".\Output") {
-            Remove-Item ".\Output" -Recurse -Force  
-            Write-Host "Removed Output folder" -ForegroundColor Gray
-          }
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-intunewin
+          path: ${{ env.INTUNEWIN_PATH }}
