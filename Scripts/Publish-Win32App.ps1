@@ -317,18 +317,10 @@ function New-OrUpdateApp {
 
     $existing = Find-ExistingApp -Headers $Headers -DisplayName $Payload.displayName
     if ($existing) {
-        if ($existing.publishingState -ne 'published') {
-            Write-Host "  Deleting stale app (state: $($existing.publishingState))..."
-            Invoke-Graph -Headers $Headers -Method DELETE `
-                -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$($existing.id)" | Out-Null
-            Start-Sleep -Seconds 3
-        } else {
-            Write-Host "  Updating existing app: $($existing.id)"
-            Invoke-Graph -Headers $Headers -Method PATCH `
-                -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$($existing.id)" `
-                -Body $Payload | Out-Null
-            return $existing.id
-        }
+        Write-Host "  Deleting existing app (state: $($existing.publishingState))..."
+        Invoke-Graph -Headers $Headers -Method DELETE `
+            -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$($existing.id)" | Out-Null
+        Start-Sleep -Seconds 3
     }
 
     Write-Host "  Creating new app..."
