@@ -358,8 +358,12 @@ function Send-FileContent {
 
     $fileSize = (Get-Item $FilePath).Length
     Write-Host "    Uploading file ($fileSize bytes)..."
-    Invoke-WebRequest -Method PUT -Uri $UploadUri -InFile $FilePath `
-        -Headers @{ 'x-ms-blob-type' = 'BlockBlob'; 'Content-Type' = 'application/octet-stream' } | Out-Null
+
+    $webClient = [System.Net.WebClient]::new()
+    $webClient.Headers['x-ms-blob-type'] = 'BlockBlob'
+    $webClient.UploadFile($UploadUri, 'PUT', $FilePath)
+    $webClient.Dispose()
+
     Write-Host "    Upload complete."
 }
 
