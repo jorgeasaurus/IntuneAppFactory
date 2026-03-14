@@ -5,7 +5,7 @@
         "AppPublisher": "Igor Pavlov",
         "AppSource": "Evergreen",
         "AppID": "7zip",
-        "AppFolderName": "7Zip",
+        "AppFolderName": "7zip",
         "FilterOptions": [
             {
                 "Architecture": "x64",

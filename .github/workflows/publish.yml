@@ -147,7 +147,8 @@ jobs:
             -ClientId     $env:CLIENT_ID `
             -ClientSecret $env:CLIENT_SECRET `
             -AppFolder    '${{ matrix.appFolder }}' `
-            -IntuneWinPath $env:INTUNEWIN_PATH
+            -IntuneWinPath $env:INTUNEWIN_PATH `
+            -AppVersion   $env:APP_VERSION
 
       - name: Upload artifact
         if: always()

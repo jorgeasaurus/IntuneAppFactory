@@ -24,7 +24,8 @@ param(
     [Parameter(Mandatory)] [string] $ClientId,
     [Parameter(Mandatory)] [string] $ClientSecret,
     [Parameter(Mandatory)] [string] $AppFolder,
-    [Parameter(Mandatory)] [string] $IntuneWinPath
+    [Parameter(Mandatory)] [string] $IntuneWinPath,
+    [string] $AppVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,7 +43,19 @@ function Get-GraphToken {
         scope         = 'https://graph.microsoft.com/.default'
     }
     $uri = "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token"
-    return (Invoke-RestMethod -Method POST -Uri $uri -Body $body -ContentType 'application/x-www-form-urlencoded').access_token
+    try {
+        return (Invoke-RestMethod -Method POST -Uri $uri -Body $body -ContentType 'application/x-www-form-urlencoded').access_token
+    }
+    catch {
+        $msg = $_.ErrorDetails.Message | ConvertFrom-Json -ErrorAction SilentlyContinue
+        $hint = switch ($msg.error) {
+            'invalid_client'      { 'Check CLIENT_SECRET — use the secret value, not the secret ID. It may also be expired.' }
+            'unauthorized_client' { 'Check CLIENT_ID and verify the app registration has the correct API permissions.' }
+            'invalid_request'     { 'Check TENANT_ID format (must be a GUID).' }
+            default               { $msg.error_description ?? $_.Exception.Message }
+        }
+        throw "Authentication failed: $hint"
+    }
 }
 
 function Invoke-Graph {
@@ -50,12 +63,27 @@ function Invoke-Graph {
         [hashtable] $Headers,
         [string] $Method = 'GET',
         [string] $Uri,
-        [object] $Body
+        [object] $Body,
+        [int] $MaxRetries = 3
     )
 
     $params = @{ Method = $Method; Uri = $Uri; Headers = $Headers; ContentType = 'application/json' }
     if ($Body) { $params.Body = ($Body | ConvertTo-Json -Depth 10) }
-    return Invoke-RestMethod @params
+
+    for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
+        try {
+            return Invoke-RestMethod @params
+        }
+        catch {
+            $status = $_.Exception.Response.StatusCode.value__
+            $retryable = $status -in @(429, 500, 502, 503, 504)
+            if (-not $retryable -or $attempt -eq $MaxRetries) { throw }
+
+            $delay = [math]::Pow(2, $attempt)
+            Write-Host "    Graph API returned $status — retrying in ${delay}s (attempt $attempt/$MaxRetries)"
+            Start-Sleep -Seconds $delay
+        }
+    }
 }
 
 function Get-IntuneWinMetadata {
@@ -221,12 +249,12 @@ function Build-AppPayload {
 function Resolve-IconBase64 {
     param([string] $AppFolder, [string] $IconRef)
 
-    $iconPath = if ($IconRef -match '^https?://') { $null } else { Join-Path $AppFolder ($IconRef ?? 'Icon.png') }
-
-    if ($IconRef -match '^https?://') {
+    $iconPath = if ($IconRef -match '^https?://') {
         $tempIcon = Join-Path ([System.IO.Path]::GetTempPath()) 'icon.png'
         Invoke-WebRequest -Uri $IconRef -OutFile $tempIcon -UseBasicParsing
-        $iconPath = $tempIcon
+        $tempIcon
+    } else {
+        Join-Path $AppFolder ($IconRef ?? 'Icon.png')
     }
 
     if (-not $iconPath -or -not (Test-Path $iconPath)) { return $null }
@@ -414,6 +442,11 @@ Write-Host "Package:    $IntuneWinPath`n"
 $appJsonPath = Join-Path $AppFolder 'App.json'
 if (-not (Test-Path $appJsonPath)) { throw "App.json not found at $appJsonPath" }
 $config = Get-Content -Raw $appJsonPath | ConvertFrom-Json -AsHashtable
+
+if ($AppVersion) {
+    $config.Information.AppVersion = $AppVersion
+    $config.Information.DisplayName = "$($config.Information.DisplayName) $AppVersion"
+}
 Write-Host "[1/5] Loaded App.json: $($config.Information.DisplayName)"
 
 Write-Host "[2/5] Authenticating..."

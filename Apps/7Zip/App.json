@@ -42,15 +42,7 @@
     {
       "Target": "AllUsers",
       "Intent": "available",
-      "Notification": "showAll",
-      "AvailableTime": "",
-      "DeadlineTime": "",
-      "UseLocalTime": "true",
-      "DeliveryOptimizationPriority": "notConfigured",
-      "EnableRestartGracePeriod": "false",
-      "RestartGracePeriod": "",
-      "RestartCountDownDisplay": "",
-      "RestartNotificationSnooze": ""
+      "Notification": "showAll"
     }
   ]
 }
