@@ -84,10 +84,20 @@ jobs:
 
       - name: Install Evergreen module
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           Install-Module -Name Evergreen -Force -Scope CurrentUser
-          Update-Evergreen
+          $retries = 3
+          for ($i = 1; $i -le $retries; $i++) {
+            try { Update-Evergreen; break }
+            catch {
+              Write-Warning "Update-Evergreen attempt $i/$retries failed: $_"
+              if ($i -eq $retries) { throw }
+              Start-Sleep -Seconds (10 * $i)
+            }
+          }
 
       - name: Download installer via Evergreen
         shell: pwsh
@@ -190,7 +200,7 @@ jobs:
             -AppVersion   $env:APP_VERSION
 
       - name: Upload artifact
-        if: always()
+        if: always() && env.INTUNEWIN_PATH != ''
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.appName }}.intunewin
