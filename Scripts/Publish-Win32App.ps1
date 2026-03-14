@@ -129,7 +129,8 @@ function Build-SingleDetectionRule {
     switch ($type) {
         'MSI' {
             return @{
-                '@odata.type'          = '#microsoft.graph.win32LobAppProductCodeDetection'
+                '@odata.type'          = '#microsoft.graph.win32LobAppProductCodeRule'
+                ruleType               = 'detection'
                 productCode            = $Rule.ProductCode
                 productVersionOperator = $Rule.ProductVersionOperator ?? 'notConfigured'
                 productVersion         = $Rule.ProductVersion ?? ''
@@ -138,32 +139,35 @@ function Build-SingleDetectionRule {
         'Registry' {
             $method = ($Rule.RegistryDetectionType ?? $Rule.DetectionMethod ?? 'existence').ToLower()
             $regRule = @{
-                '@odata.type'        = '#microsoft.graph.win32LobAppRegistryDetection'
+                '@odata.type'        = '#microsoft.graph.win32LobAppRegistryRule'
+                ruleType             = 'detection'
                 keyPath              = $Rule.KeyPath
                 valueName            = $Rule.ValueName
                 check32BitOn64System = ConvertTo-BoolFromString ($Rule.Check32BitOn64System ?? $Rule.check32BitOn64System)
             }
-            $detectionMap = @{
-                'versioncomparison' = @{ detectionType = 'version'; operator = $Rule.Operator ?? 'greaterThanOrEqual'; detectionValue = $Rule.Value ?? '' }
-                'stringcomparison'  = @{ detectionType = 'string';  operator = $Rule.Operator ?? 'equal';              detectionValue = $Rule.Value ?? '' }
+            $operationMap = @{
+                'versioncomparison' = @{ operationType = 'version'; operator = $Rule.Operator ?? 'greaterThanOrEqual'; comparisonValue = $Rule.Value ?? '' }
+                'stringcomparison'  = @{ operationType = 'string';  operator = $Rule.Operator ?? 'equal';              comparisonValue = $Rule.Value ?? '' }
+                'integercomparison' = @{ operationType = 'integer'; operator = $Rule.Operator ?? 'greaterThanOrEqual'; comparisonValue = $Rule.Value ?? '' }
             }
-            $mapped = $detectionMap[$method]
+            $mapped = $operationMap[$method]
             if ($mapped) { $regRule += $mapped }
-            else         { $regRule += @{ detectionType = 'exists'; operator = 'notConfigured' } }
+            else         { $regRule += @{ operationType = 'exists'; operator = 'notConfigured' } }
             return $regRule
         }
         'File' {
             $method = ($Rule.FileDetectionType ?? $Rule.DetectionMethod ?? 'exists').ToLower()
             $fileRule = @{
-                '@odata.type'        = '#microsoft.graph.win32LobAppFileSystemDetection'
+                '@odata.type'        = '#microsoft.graph.win32LobAppFileSystemRule'
+                ruleType             = 'detection'
                 path                 = $Rule.Path
                 fileOrFolderName     = $Rule.FileOrFolderName ?? $Rule.FileOrFolder
                 check32BitOn64System = ConvertTo-BoolFromString ($Rule.Check32BitOn64System ?? $Rule.check32BitOn64System)
-                detectionType        = $method
+                operationType        = $method
                 operator             = $Rule.Operator ?? 'notConfigured'
             }
             if ($method -eq 'version') {
-                $fileRule.detectionValue = $Rule.VersionValue ?? $Rule.Value ?? ''
+                $fileRule.comparisonValue = $Rule.VersionValue ?? $Rule.Value ?? ''
                 $fileRule.operator = $Rule.Operator ?? 'greaterThanOrEqual'
             }
             return $fileRule
@@ -171,7 +175,8 @@ function Build-SingleDetectionRule {
         'Script' {
             $scriptPath = Join-Path $AppFolder $Rule.ScriptFile
             return @{
-                '@odata.type'         = '#microsoft.graph.win32LobAppPowerShellScriptDetection'
+                '@odata.type'         = '#microsoft.graph.win32LobAppPowerShellScriptRule'
+                ruleType              = 'detection'
                 scriptContent         = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Raw -Path $scriptPath)))
                 enforceSignatureCheck = ConvertTo-BoolFromString $Rule.EnforceSignatureCheck
                 runAs32Bit            = ConvertTo-BoolFromString $Rule.RunAs32Bit

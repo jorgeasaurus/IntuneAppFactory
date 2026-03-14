@@ -84,7 +84,8 @@ Describe 'Build-SingleDetectionRule' {
                 ProductVersion         = '1.0.0'
             }
             $result = Build-SingleDetectionRule -Rule $rule -AppFolder 'test'
-            $result.'@odata.type' | Should -Be '#microsoft.graph.win32LobAppProductCodeDetection'
+            $result.'@odata.type' | Should -Be '#microsoft.graph.win32LobAppProductCodeRule'
+            $result.ruleType | Should -Be 'detection'
             $result.productCode | Should -Be '{12345-ABCDE}'
             $result.productVersionOperator | Should -Be 'greaterThanOrEqual'
             $result.productVersion | Should -Be '1.0.0'
@@ -108,10 +109,11 @@ Describe 'Build-SingleDetectionRule' {
                 Check32BitOn64System   = 'true'
             }
             $result = Build-SingleDetectionRule -Rule $rule -AppFolder 'test'
-            $result.'@odata.type' | Should -Be '#microsoft.graph.win32LobAppRegistryDetection'
-            $result.detectionType | Should -Be 'version'
+            $result.'@odata.type' | Should -Be '#microsoft.graph.win32LobAppRegistryRule'
+            $result.ruleType | Should -Be 'detection'
+            $result.operationType | Should -Be 'version'
             $result.operator | Should -Be 'greaterThanOrEqual'
-            $result.detectionValue | Should -Be '2.0'
+            $result.comparisonValue | Should -Be '2.0'
             $result.check32BitOn64System | Should -Be $true
         }
         It 'builds string comparison rule' {
@@ -125,7 +127,7 @@ Describe 'Build-SingleDetectionRule' {
                 Check32BitOn64System   = 'false'
             }
             $result = Build-SingleDetectionRule -Rule $rule -AppFolder 'test'
-            $result.detectionType | Should -Be 'string'
+            $result.operationType | Should -Be 'string'
             $result.check32BitOn64System | Should -Be $false
         }
         It 'defaults to existence detection when no method specified' {
@@ -135,7 +137,7 @@ Describe 'Build-SingleDetectionRule' {
                 ValueName     = 'Installed'
             }
             $result = Build-SingleDetectionRule -Rule $rule -AppFolder 'test'
-            $result.detectionType | Should -Be 'exists'
+            $result.operationType | Should -Be 'exists'
             $result.operator | Should -Be 'notConfigured'
         }
     }
@@ -150,10 +152,11 @@ Describe 'Build-SingleDetectionRule' {
                 check32BitOn64System = 'false'
             }
             $result = Build-SingleDetectionRule -Rule $rule -AppFolder 'test'
-            $result.'@odata.type' | Should -Be '#microsoft.graph.win32LobAppFileSystemDetection'
+            $result.'@odata.type' | Should -Be '#microsoft.graph.win32LobAppFileSystemRule'
+            $result.ruleType | Should -Be 'detection'
             $result.path | Should -Be 'C:\Program Files\7-Zip'
             $result.fileOrFolderName | Should -Be '7z.exe'
-            $result.detectionType | Should -Be 'exists'
+            $result.operationType | Should -Be 'exists'
         }
         It 'builds file version rule with operator' {
             $rule = [PSCustomObject]@{
@@ -165,9 +168,9 @@ Describe 'Build-SingleDetectionRule' {
                 VersionValue      = '3.0.0'
             }
             $result = Build-SingleDetectionRule -Rule $rule -AppFolder 'test'
-            $result.detectionType | Should -Be 'version'
+            $result.operationType | Should -Be 'version'
             $result.operator | Should -Be 'greaterThanOrEqual'
-            $result.detectionValue | Should -Be '3.0.0'
+            $result.comparisonValue | Should -Be '3.0.0'
         }
     }
 
@@ -187,8 +190,8 @@ Describe 'Build-DetectionRules' {
         )
         $results = Build-DetectionRules -Rules $rules -AppFolder 'test'
         $results.Count | Should -Be 2
-        $results[0].'@odata.type' | Should -Be '#microsoft.graph.win32LobAppProductCodeDetection'
-        $results[1].'@odata.type' | Should -Be '#microsoft.graph.win32LobAppFileSystemDetection'
+        $results[0].'@odata.type' | Should -Be '#microsoft.graph.win32LobAppProductCodeRule'
+        $results[1].'@odata.type' | Should -Be '#microsoft.graph.win32LobAppFileSystemRule'
     }
 }
 
@@ -214,7 +217,7 @@ Describe 'Build-AppPayload' {
                 MinimumRequiredOperatingSystem = 'W10_22H2'
             }
         }
-        $testRules = @(@{ '@odata.type' = '#microsoft.graph.win32LobAppProductCodeDetection' })
+        $testRules = @(@{ '@odata.type' = '#microsoft.graph.win32LobAppProductCodeRule'; ruleType = 'detection' })
     }
 
     It 'builds correct odata type' {
