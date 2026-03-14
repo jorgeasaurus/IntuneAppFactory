@@ -81,6 +81,7 @@ jobs:
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           Install-Module -Name Evergreen -Force -Scope CurrentUser
+          Update-Evergreen
 
       - name: Download installer via Evergreen
         shell: pwsh
