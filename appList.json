@@ -130,20 +130,6 @@
     ]
   },
   {
-    "IntuneAppName": "FileZilla",
-    "AppPublisher": "Tim Kosse",
-    "AppSource": "Evergreen",
-    "AppID": "FileZillaClient",
-    "AppFolderName": "FileZilla",
-    "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/filezilla.png",
-    "FilterOptions": [
-      {
-        "Architecture": "x64",
-        "Type": "exe"
-      }
-    ]
-  },
-  {
     "IntuneAppName": "Visual Studio Code",
     "AppPublisher": "Microsoft",
     "AppSource": "Evergreen",
