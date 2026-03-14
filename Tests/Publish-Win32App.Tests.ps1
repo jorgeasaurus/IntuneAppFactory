@@ -376,6 +376,12 @@ Describe 'appList.json validation' {
         }
     }
 
+    It 'each AppSource is a supported value' {
+        foreach ($app in @($appList)) {
+            $app.AppSource | Should -BeIn @('Evergreen', 'Winget') -Because "$($app.IntuneAppName) has unsupported AppSource '$($app.AppSource)'"
+        }
+    }
+
     It 'each AppFolderName maps to an existing Apps/ directory' {
         foreach ($app in @($appList)) {
             $folder = Join-Path $PSScriptRoot '..' 'Apps' $app.AppFolderName
@@ -383,11 +389,20 @@ Describe 'appList.json validation' {
         }
     }
 
-    It 'each FilterOptions has Architecture and Type' {
-        foreach ($app in @($appList)) {
+    It 'each Evergreen entry has Architecture and Type in FilterOptions' {
+        foreach ($app in @($appList) | Where-Object { $_.AppSource -eq 'Evergreen' }) {
             foreach ($filter in $app.FilterOptions) {
-                $filter.Architecture | Should -Not -BeNullOrEmpty
-                $filter.Type | Should -Not -BeNullOrEmpty
+                $filter.Architecture | Should -Not -BeNullOrEmpty -Because "$($app.IntuneAppName) Evergreen filter needs Architecture"
+                $filter.Type | Should -Not -BeNullOrEmpty -Because "$($app.IntuneAppName) Evergreen filter needs Type"
+            }
+        }
+    }
+
+    It 'each Winget entry has at least one FilterOption property' {
+        foreach ($app in @($appList) | Where-Object { $_.AppSource -eq 'Winget' }) {
+            foreach ($filter in $app.FilterOptions) {
+                $props = $filter.PSObject.Properties | Where-Object { $_.Value }
+                $props.Count | Should -BeGreaterThan 0 -Because "$($app.IntuneAppName) Winget filter should have at least one option"
             }
         }
     }

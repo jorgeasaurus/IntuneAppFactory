@@ -41,16 +41,19 @@ jobs:
             $appJson = Join-Path $folder 'App.json'
             if (-not (Test-Path $appJson)) { throw "Missing $appJson for $($app.IntuneAppName)" }
 
+            $filters = $app.FilterOptions | Select-Object -First 1
             $matrix.include += @{
               appName     = $app.IntuneAppName
               appFolder   = $folder
-              evergreenId = $app.AppID
+              appSource   = $app.AppSource ?? 'Evergreen'
+              appId       = $app.AppID
               iconUrl     = $app.IconUrl ?? ''
-              filterArch  = ($app.FilterOptions | Select-Object -First 1).Architecture
-              filterType  = ($app.FilterOptions | Select-Object -First 1).Type
-              filterChan  = ($app.FilterOptions | Select-Object -First 1).Channel
-              filterLang  = ($app.FilterOptions | Select-Object -First 1).Language
-              filterStrm  = ($app.FilterOptions | Select-Object -First 1).Stream
+              filterArch  = $filters.Architecture
+              filterType  = $filters.Type
+              filterChan  = $filters.Channel
+              filterLang  = $filters.Language
+              filterStrm  = $filters.Stream
+              filterScope = $filters.Scope
             }
           }
 
@@ -83,6 +86,7 @@ jobs:
           }
 
       - name: Install Evergreen module
+        if: matrix.appSource == 'Evergreen'
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -100,10 +104,11 @@ jobs:
           }
 
       - name: Download installer via Evergreen
+        if: matrix.appSource == 'Evergreen'
         shell: pwsh
         run: |
           Import-Module Evergreen
-          $apps = Get-EvergreenApp -Name '${{ matrix.evergreenId }}'
+          $apps = Get-EvergreenApp -Name '${{ matrix.appId }}'
 
           $arch = '${{ matrix.filterArch }}'
           $type = '${{ matrix.filterType }}'
@@ -118,7 +123,7 @@ jobs:
           $app = $apps | Sort-Object { try { [version]($_.Version -replace '[^0-9.]','') } catch { [version]'0.0' } } -Descending |
             Select-Object -First 1
 
-          if (-not $app) { throw "No Evergreen result for ${{ matrix.evergreenId }} (arch=$arch, type=$type)" }
+          if (-not $app) { throw "No Evergreen result for ${{ matrix.appId }} (arch=$arch, type=$type)" }
           Write-Host "Found: $($app.Version) -> $($app.URI)"
 
           $filesDir = Join-Path '${{ matrix.appFolder }}' 'Files'
@@ -129,6 +134,55 @@ jobs:
           Write-Host "Downloaded: $outPath ($('{0:N1} MB' -f ((Get-Item $outPath).Length / 1MB)))"
 
           "APP_VERSION=$($app.Version)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Download installer via Winget
+        if: matrix.appSource == 'Winget'
+        shell: pwsh
+        run: |
+          $appId = '${{ matrix.appId }}'
+          $arch  = '${{ matrix.filterArch }}'
+          $type  = '${{ matrix.filterType }}'
+          $scope = '${{ matrix.filterScope }}'
+
+          $filesDir = Join-Path '${{ matrix.appFolder }}' 'Files'
+          New-Item -ItemType Directory -Force -Path $filesDir | Out-Null
+
+          # Build winget download arguments
+          $wingetArgs = @('download', '--id', $appId,
+                          '--download-directory', (Resolve-Path $filesDir).Path,
+                          '--accept-source-agreements', '--accept-package-agreements')
+          if ($arch)  { $wingetArgs += '--architecture';   $wingetArgs += $arch }
+          if ($type)  { $wingetArgs += '--installer-type'; $wingetArgs += $type }
+          if ($scope) { $wingetArgs += '--scope';          $wingetArgs += $scope }
+
+          # Download with retry logic
+          $retries = 3
+          for ($i = 1; $i -le $retries; $i++) {
+            try {
+              Write-Host "Winget download attempt $i/$retries for $appId"
+              $output = & winget @wingetArgs 2>&1 | Out-String
+              Write-Host $output
+              if ($LASTEXITCODE -ne 0) { throw "winget exited with code $LASTEXITCODE" }
+              break
+            } catch {
+              Write-Warning "Attempt $i/$retries failed: $_"
+              if ($i -eq $retries) { throw "Winget download failed after $retries attempts for $appId" }
+              Start-Sleep -Seconds (10 * $i)
+            }
+          }
+
+          $downloaded = Get-ChildItem $filesDir -File | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $downloaded) { throw "No installer file found after winget download for $appId" }
+          Write-Host "Downloaded: $($downloaded.FullName) ($('{0:N1} MB' -f ($downloaded.Length / 1MB)))"
+
+          # Extract version from winget show
+          $showOutput = & winget show --id $appId --accept-source-agreements 2>&1 | Out-String
+          $version = ($showOutput -split "`n" |
+            Where-Object { $_ -match '^\s*Version\s*:\s*(.+)' } |
+            ForEach-Object { $Matches[1].Trim() } |
+            Select-Object -First 1) ?? 'Unknown'
+          Write-Host "Version: $version"
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Download app icon
         shell: pwsh

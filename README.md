@@ -1,6 +1,6 @@
 # IntuneAppFactory
 
-IntuneAppFactory automates deploying Win32 applications to Microsoft Intune. A single GitHub Actions workflow detects the latest version of each app via [Evergreen](https://stealthpuppy.com/evergreen/), downloads it, wraps it in a [PSADT](https://psappdeploytoolkit.com/) package, and publishes it to Intune — no Azure Storage required.
+IntuneAppFactory automates deploying Win32 applications to Microsoft Intune. A single GitHub Actions workflow detects the latest version of each app via [Evergreen](https://stealthpuppy.com/evergreen/) or [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/), downloads it, wraps it in a [PSADT](https://psappdeploytoolkit.com/) package, and publishes it to Intune — no Azure Storage required.
 
 ## How It Works
 
@@ -10,8 +10,8 @@ appList.json ──► GitHub Actions workflow
                    ├─ Plan job: builds a matrix entry per app
                    │
                    └─ Deploy jobs (parallel, one per app):
-                        1. Install Evergreen module
-                        2. Query Evergreen for latest version & download installer
+                        1. Query source (Evergreen or winget) for latest version
+                        2. Download installer
                         3. Wrap in PSADT package folder
                         4. Package with IntuneWinAppUtil.exe → .intunewin
                         5. Publish to Intune via Graph API (Scripts/Publish-Win32App.ps1)
@@ -53,6 +53,8 @@ Go to **Actions → Deploy Win32 Apps to Intune → Run workflow**.
 
 ### 1. Add an entry to `appList.json`
 
+#### Evergreen source
+
 ```json
 {
     "IntuneAppName": "7-Zip",
@@ -66,12 +68,28 @@ Go to **Actions → Deploy Win32 Apps to Intune → Run workflow**.
 }
 ```
 
+#### Winget source
+
+```json
+{
+    "IntuneAppName": "7-Zip",
+    "AppPublisher": "Igor Pavlov",
+    "AppSource": "Winget",
+    "AppID": "7zip.7zip",
+    "AppFolderName": "7zip",
+    "FilterOptions": [
+        { "Architecture": "x64", "Type": "msi", "Scope": "machine" }
+    ]
+}
+```
+
 | Field | Description |
 |---|---|
 | `IntuneAppName` | Display name shown in Intune |
-| `AppID` | Evergreen app identifier (run `Find-EvergreenApp` to discover IDs) |
+| `AppSource` | `Evergreen` or `Winget` — determines how the installer is downloaded |
+| `AppID` | Source-specific identifier. Evergreen: run `Find-EvergreenApp`. Winget: run `winget search <name>` |
 | `AppFolderName` | Must match the folder name under `Apps/` |
-| `FilterOptions` | Filter Evergreen results by architecture and installer type |
+| `FilterOptions` | Filter results — shared: `Architecture`, `Type`. Winget-only: `Scope` (`machine`/`user`). Evergreen-only: `Channel`, `Language`, `Stream` |
 
 ### 2. Create the app folder
 
@@ -189,11 +207,11 @@ Invoke-Pester -Path ./Tests -Output Detailed
 
 ## Included Apps
 
-| App | Evergreen ID | Detection | Assignment |
-|---|---|---|---|
-| 7-Zip | `7zip` | File exists (`7z.exe`) | All Users — Available |
-| Notepad++ | `NotepadPlusPlus` | Registry version check | All Users — Available |
-| VLC | `VideoLanVlcPlayer` | MSI product code | All Users — Available |
+| App | Source | App ID | Detection | Assignment |
+|---|---|---|---|---|
+| 7-Zip | Evergreen | `7zip` | File exists (`7z.exe`) | All Users — Available |
+| Notepad++ | Evergreen | `NotepadPlusPlus` | Registry version check | All Users — Available |
+| VLC | Evergreen | `VideoLanVlcPlayer` | MSI product code | All Users — Available |
 
 ## License
 
