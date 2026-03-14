@@ -117,6 +117,26 @@ function Get-IntuneWinMetadata {
     finally { $zip.Dispose() }
 }
 
+function Export-EncryptedContent {
+    param([string] $IntuneWinPath, [string] $FileName)
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($IntuneWinPath)
+    try {
+        $entry = $zip.Entries | Where-Object { $_.Name -eq $FileName } | Select-Object -First 1
+        if (-not $entry) { throw "Encrypted content '$FileName' not found in $IntuneWinPath" }
+
+        $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) $FileName
+        $entryStream = $entry.Open()
+        $fileStream = [System.IO.File]::Create($tempPath)
+        try { $entryStream.CopyTo($fileStream) }
+        finally { $entryStream.Dispose(); $fileStream.Dispose() }
+
+        return $tempPath
+    }
+    finally { $zip.Dispose() }
+}
+
 function ConvertTo-BoolFromString ([string] $Value) {
     return ($Value -eq 'true')
 }
@@ -291,11 +311,18 @@ function New-OrUpdateApp {
 
     $existing = Find-ExistingApp -Headers $Headers -DisplayName $Payload.displayName
     if ($existing) {
-        Write-Host "  Updating existing app: $($existing.id)"
-        Invoke-Graph -Headers $Headers -Method PATCH `
-            -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$($existing.id)" `
-            -Body $Payload | Out-Null
-        return $existing.id
+        if ($existing.publishingState -ne 'published') {
+            Write-Host "  Deleting stale app (state: $($existing.publishingState))..."
+            Invoke-Graph -Headers $Headers -Method DELETE `
+                -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$($existing.id)" | Out-Null
+            Start-Sleep -Seconds 3
+        } else {
+            Write-Host "  Updating existing app: $($existing.id)"
+            Invoke-Graph -Headers $Headers -Method PATCH `
+                -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$($existing.id)" `
+                -Body $Payload | Out-Null
+            return $existing.id
+        }
     }
 
     Write-Host "  Creating new app..."
@@ -335,53 +362,60 @@ function Send-FileContent {
 function Upload-IntuneWinFile {
     param([hashtable] $Headers, [string] $AppId, [string] $IntuneWinPath, [hashtable] $Metadata)
 
-    $cvUri = "$script:GraphBase/deviceAppManagement/mobileApps/$AppId/microsoft.graph.win32LobApp/contentVersions"
+    # Extract the inner encrypted file from the .intunewin zip
+    $encryptedPath = Export-EncryptedContent -IntuneWinPath $IntuneWinPath -FileName $Metadata.FileName
+    try {
+        $cvUri = "$script:GraphBase/deviceAppManagement/mobileApps/$AppId/microsoft.graph.win32LobApp/contentVersions"
 
-    Write-Host "  Creating content version..."
-    $cvId = (Invoke-Graph -Headers $Headers -Method POST -Uri $cvUri -Body @{}).id
+        Write-Host "  Creating content version..."
+        $cvId = (Invoke-Graph -Headers $Headers -Method POST -Uri $cvUri -Body @{}).id
 
-    $fileSize = (Get-Item $IntuneWinPath).Length
-    Write-Host "  Registering file (size: $fileSize bytes)..."
-    $regBody = @{
-        '@odata.type' = '#microsoft.graph.mobileAppContentFile'
-        name          = [System.IO.Path]::GetFileName($IntuneWinPath)
-        size          = [int64]$Metadata.UnencryptedSize
-        sizeEncrypted = [int64]$fileSize
-        manifest      = $null
-        isDependency  = $false
-    }
-    $fileId = (Invoke-Graph -Headers $Headers -Method POST -Uri "$cvUri/$cvId/files" -Body $regBody).id
-
-    Write-Host "  Waiting for Azure Storage URI..."
-    $fileInfo = Wait-ForFileState -Headers $Headers -AppId $AppId -ContentVersionId $cvId `
-        -FileId $fileId -DesiredState 'azureStorageUriRequestSuccess'
-
-    Send-FileContent -FilePath $IntuneWinPath -UploadUri $fileInfo.azureStorageUri
-
-    Write-Host "  Committing file with encryption info..."
-    $commitBody = @{
-        fileEncryptionInfo = @{
-            encryptionKey        = $Metadata.EncryptionKey
-            macKey               = $Metadata.MacKey
-            initializationVector = $Metadata.InitializationVector
-            mac                  = $Metadata.Mac
-            profileIdentifier    = $Metadata.ProfileIdentifier
-            fileDigest           = $Metadata.FileDigest
-            fileDigestAlgorithm  = $Metadata.FileDigestAlgorithm
+        $encryptedSize = (Get-Item $encryptedPath).Length
+        Write-Host "  Registering file (encrypted: $encryptedSize bytes, unencrypted: $($Metadata.UnencryptedSize) bytes)..."
+        $regBody = @{
+            '@odata.type' = '#microsoft.graph.mobileAppContentFile'
+            name          = $Metadata.FileName
+            size          = [int64]$Metadata.UnencryptedSize
+            sizeEncrypted = [int64]$encryptedSize
+            manifest      = $null
+            isDependency  = $false
         }
+        $fileId = (Invoke-Graph -Headers $Headers -Method POST -Uri "$cvUri/$cvId/files" -Body $regBody).id
+
+        Write-Host "  Waiting for Azure Storage URI..."
+        $fileInfo = Wait-ForFileState -Headers $Headers -AppId $AppId -ContentVersionId $cvId `
+            -FileId $fileId -DesiredState 'azureStorageUriRequestSuccess'
+
+        Send-FileContent -FilePath $encryptedPath -UploadUri $fileInfo.azureStorageUri
+
+        Write-Host "  Committing file with encryption info..."
+        $commitBody = @{
+            fileEncryptionInfo = @{
+                encryptionKey        = $Metadata.EncryptionKey
+                macKey               = $Metadata.MacKey
+                initializationVector = $Metadata.InitializationVector
+                mac                  = $Metadata.Mac
+                profileIdentifier    = $Metadata.ProfileIdentifier
+                fileDigest           = $Metadata.FileDigest
+                fileDigestAlgorithm  = $Metadata.FileDigestAlgorithm
+            }
+        }
+        Invoke-Graph -Headers $Headers -Method POST -Uri "$cvUri/$cvId/files/$fileId/commit" -Body $commitBody | Out-Null
+
+        Write-Host "  Waiting for commit to complete..."
+        Wait-ForFileState -Headers $Headers -AppId $AppId -ContentVersionId $cvId `
+            -FileId $fileId -DesiredState 'commitFileSuccess' -MaxWait 180 | Out-Null
+
+        Write-Host "  Setting committed content version..."
+        Invoke-Graph -Headers $Headers -Method PATCH `
+            -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$AppId" `
+            -Body @{ '@odata.type' = '#microsoft.graph.win32LobApp'; committedContentVersion = $cvId } | Out-Null
+
+        return $cvId
     }
-    Invoke-Graph -Headers $Headers -Method POST -Uri "$cvUri/$cvId/files/$fileId/commit" -Body $commitBody | Out-Null
-
-    Write-Host "  Waiting for commit to complete..."
-    Wait-ForFileState -Headers $Headers -AppId $AppId -ContentVersionId $cvId `
-        -FileId $fileId -DesiredState 'commitFileSuccess' -MaxWait 180 | Out-Null
-
-    Write-Host "  Setting committed content version..."
-    Invoke-Graph -Headers $Headers -Method PATCH `
-        -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$AppId" `
-        -Body @{ '@odata.type' = '#microsoft.graph.win32LobApp'; committedContentVersion = $cvId } | Out-Null
-
-    return $cvId
+    finally {
+        if (Test-Path $encryptedPath) { Remove-Item $encryptedPath -Force }
+    }
 }
 
 function Resolve-AssignmentTarget {
