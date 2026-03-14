@@ -267,7 +267,14 @@ function Resolve-IconBase64 {
     }
 
     if (-not $iconPath -or -not (Test-Path $iconPath)) { return $null }
-    return [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($iconPath))
+
+    $bytes = [System.IO.File]::ReadAllBytes($iconPath)
+    # Detect if file is base64 text (not binary PNG) — avoid double-encoding
+    if ($bytes[0] -ne 0x89 -and $bytes.Length -lt 500000) {
+        $text = [System.Text.Encoding]::ASCII.GetString($bytes).Trim()
+        if ($text -match '^[A-Za-z0-9+/=]+$') { return $text }
+    }
+    return [Convert]::ToBase64String($bytes)
 }
 
 function Find-ExistingApp {
@@ -315,34 +322,14 @@ function Wait-ForFileState {
     throw "Timed out waiting for file state '$DesiredState' (waited ${MaxWait}s)"
 }
 
-function Send-FileChunks {
-    param([string] $FilePath, [string] $UploadUri, [int] $ChunkSize = (6 * 1024 * 1024))
+function Send-FileContent {
+    param([string] $FilePath, [string] $UploadUri)
 
-    $fileStream = [System.IO.File]::OpenRead($FilePath)
-    $chunkIds = [System.Collections.Generic.List[string]]::new()
-    try {
-        $buffer = New-Object byte[] $ChunkSize
-        $chunkNum = 0
-        while (($bytesRead = $fileStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            $chunkId = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($chunkNum.ToString('0000')))
-            $chunkIds.Add($chunkId)
-
-            $slice = if ($bytesRead -eq $buffer.Length) { $buffer } else { $buffer[0..($bytesRead - 1)] }
-            $blockUri = "$UploadUri&comp=block&blockid=$([uri]::EscapeDataString($chunkId))"
-            Invoke-WebRequest -Method PUT -Uri $blockUri -Body $slice `
-                -Headers @{ 'x-ms-blob-type' = 'BlockBlob' } | Out-Null
-            $chunkNum++
-            Write-Host "    Uploaded chunk $chunkNum ($bytesRead bytes)"
-        }
-    }
-    finally { $fileStream.Dispose() }
-
-    $blockListXml = '<?xml version="1.0" encoding="utf-8"?><BlockList>'
-    foreach ($id in $chunkIds) { $blockListXml += "<Latest>$id</Latest>" }
-    $blockListXml += '</BlockList>'
-    Invoke-WebRequest -Method PUT -Uri "$UploadUri&comp=blocklist" -Body $blockListXml `
-        -Headers @{ 'x-ms-blob-content-type' = 'application/octet-stream' } | Out-Null
-    Write-Host "  Block list committed ($chunkNum chunks)."
+    $bytes = [System.IO.File]::ReadAllBytes($FilePath)
+    Write-Host "    Uploading file ($($bytes.Length) bytes)..."
+    Invoke-WebRequest -Method PUT -Uri $UploadUri -Body $bytes `
+        -Headers @{ 'x-ms-blob-type' = 'BlockBlob'; 'Content-Type' = 'application/octet-stream' } | Out-Null
+    Write-Host "    Upload complete."
 }
 
 function Upload-IntuneWinFile {
@@ -369,7 +356,7 @@ function Upload-IntuneWinFile {
     $fileInfo = Wait-ForFileState -Headers $Headers -AppId $AppId -ContentVersionId $cvId `
         -FileId $fileId -DesiredState 'azureStorageUriRequestSuccess'
 
-    Send-FileChunks -FilePath $IntuneWinPath -UploadUri $fileInfo.azureStorageUri
+    Send-FileContent -FilePath $IntuneWinPath -UploadUri $fileInfo.azureStorageUri
 
     Write-Host "  Committing file with encryption info..."
     $commitBody = @{
