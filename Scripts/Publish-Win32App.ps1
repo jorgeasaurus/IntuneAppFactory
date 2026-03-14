@@ -208,7 +208,7 @@ function Build-OsRequirement {
 }
 
 function Build-AppPayload {
-    param([hashtable] $Config, [array] $DetectionRules, [string] $IconBase64)
+    param([hashtable] $Config, [array] $DetectionRules, [string] $IconBase64, [string] $SetupFileName)
 
     $info = $Config.Information
     $prog = $Config.Program
@@ -224,6 +224,7 @@ function Build-AppPayload {
         informationUrl                  = $info.InformationURL ?? $null
         privacyInformationUrl           = $info.PrivacyURL ?? $null
         notes                           = $info.Notes ?? ''
+        setupFilePath                   = $SetupFileName
         installCommandLine              = $prog.InstallCommand
         uninstallCommandLine            = $prog.UninstallCommand
         installExperience               = @{ runAsAccount = $prog.InstallExperience ?? 'system' }
@@ -462,14 +463,15 @@ $headers = @{ Authorization = "Bearer $token" }
 Write-Host "  Token acquired."
 
 Write-Host "[3/5] Creating/updating app..."
+$metadata = Get-IntuneWinMetadata -IntuneWinPath $IntuneWinPath
 $detectionRules = Build-DetectionRules -Rules $config.DetectionRule -AppFolder $AppFolder
 $iconBase64 = Resolve-IconBase64 -AppFolder $AppFolder -IconRef ($config.PackageInformation.IconFile ?? $config.PackageInformation.IconURL)
-$payload = Build-AppPayload -Config $config -DetectionRules $detectionRules -IconBase64 $iconBase64
+$setupFileName = $config.PackageInformation.SetupFile ?? $metadata.SetupFile ?? 'Deploy-Application.exe'
+$payload = Build-AppPayload -Config $config -DetectionRules $detectionRules -IconBase64 $iconBase64 -SetupFileName $setupFileName
 $appId = New-OrUpdateApp -Headers $headers -Payload $payload
 Write-Host "  App ID: $appId"
 
 Write-Host "[4/5] Uploading package..."
-$metadata = Get-IntuneWinMetadata -IntuneWinPath $IntuneWinPath
 Upload-IntuneWinFile -Headers $headers -AppId $appId -IntuneWinPath $IntuneWinPath -Metadata $metadata | Out-Null
 Write-Host "  Upload complete."
 
