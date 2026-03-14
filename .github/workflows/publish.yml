@@ -127,11 +127,9 @@ jobs:
           $outDir  = "$env:RUNNER_TEMP\out"
           New-Item -ItemType Directory -Force -Path $prepDir, $outDir | Out-Null
 
-          $headers = @{ Authorization = "Bearer ${{ secrets.GITHUB_TOKEN }}" }
-          $releases = Invoke-RestMethod 'https://api.github.com/repos/microsoft/Microsoft-Win32-Content-Prep-Tool/releases/latest' -Headers $headers
-          $asset = $releases.assets | Where-Object { $_.name -match 'IntuneWinAppUtil\.exe' } | Select-Object -First 1
-          if (-not $asset) { throw 'IntuneWinAppUtil.exe not found in latest release' }
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$prepDir\IntuneWinAppUtil.exe" -Headers @{ Accept = 'application/octet-stream'; Authorization = "Bearer ${{ secrets.GITHUB_TOKEN }}" }
+          $toolUrl = 'https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/refs/heads/master/IntuneWinAppUtil.exe'
+          Invoke-WebRequest -Uri $toolUrl -OutFile "$prepDir\IntuneWinAppUtil.exe" -UseBasicParsing
+          if (-not (Test-Path "$prepDir\IntuneWinAppUtil.exe")) { throw 'Failed to download IntuneWinAppUtil.exe' }
 
           $src = Resolve-Path '${{ matrix.appFolder }}'
           & "$prepDir\IntuneWinAppUtil.exe" -c $src -s 'Deploy-Application.exe' -o $outDir -q
