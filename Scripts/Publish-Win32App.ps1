@@ -189,13 +189,15 @@ function Build-DetectionRules {
 function Build-OsRequirement {
     param([string] $MinOs)
 
+    # Graph API windowsMinimumOperatingSystem only supports properties up to v10_21H2
+    # Map newer versions to the highest valid property
     $map = @{
         'W10_1607' = 'v10_1607'; 'W10_1703' = 'v10_1703'; 'W10_1709' = 'v10_1709'
-        'W10_1809' = 'v10_1809'; 'W10_1903' = 'v10_1903'; 'W10_1909' = 'v10_1909'
-        'W10_2004' = 'v10_2004'; 'W10_20H2' = 'v10_20H2'; 'W10_21H1' = 'v10_21H1'
-        'W10_21H2' = 'v10_21H2'; 'W10_22H2' = 'v10_22H2'
-        'W11_21H2' = 'v11_21H2'; 'W11_22H2' = 'v11_22H2'; 'W11_23H2' = 'v11_23H2'
-        'W11_24H2' = 'v11_24H2'
+        'W10_1803' = 'v10_1803'; 'W10_1809' = 'v10_1809'; 'W10_1903' = 'v10_1903'
+        'W10_1909' = 'v10_1909'; 'W10_2004' = 'v10_2004'; 'W10_20H2' = 'v10_20H2'
+        'W10_21H1' = 'v10_21H1'; 'W10_21H2' = 'v10_21H2'; 'W10_22H2' = 'v10_21H2'
+        'W11_21H2' = 'v10_21H2'; 'W11_22H2' = 'v10_21H2'; 'W11_23H2' = 'v10_21H2'
+        'W11_24H2' = 'v10_21H2'
     }
     return $map[$MinOs] ?? 'v10_1607'
 }
