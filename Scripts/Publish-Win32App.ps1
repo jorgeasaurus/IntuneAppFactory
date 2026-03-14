@@ -356,22 +356,43 @@ function Wait-ForFileState {
 function Send-FileContent {
     param([string] $FilePath, [string] $UploadUri)
 
+    $chunkSize = 6 * 1024 * 1024
     $fileSize = (Get-Item $FilePath).Length
-    Write-Host "    Uploading file ($fileSize bytes)..."
+    $chunkCount = [math]::Ceiling($fileSize / $chunkSize)
+    $isoEncoding = [System.Text.Encoding]::GetEncoding('iso-8859-1')
 
-    $bytes = [System.IO.File]::ReadAllBytes($FilePath)
-    $uri = [System.Uri]::new($UploadUri)
-    $request = [System.Net.HttpWebRequest]::Create($uri)
-    $request.Method = 'PUT'
-    $request.ContentLength = $bytes.Length
-    $request.Headers['x-ms-blob-type'] = 'BlockBlob'
-    $stream = $request.GetRequestStream()
-    $stream.Write($bytes, 0, $bytes.Length)
-    $stream.Close()
-    $response = $request.GetResponse()
-    $response.Close()
+    Write-Host "    Uploading file ($fileSize bytes, $chunkCount chunks)..."
 
-    Write-Host "    Upload complete."
+    $reader = [System.IO.BinaryReader]::new([System.IO.File]::Open($FilePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite))
+    $reader.BaseStream.Seek(0, [System.IO.SeekOrigin]::Begin) | Out-Null
+    $chunkIds = @()
+
+    try {
+        for ($i = 0; $i -lt $chunkCount; $i++) {
+            $chunkId = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($i.ToString('0000')))
+            $chunkIds += $chunkId
+
+            $start = $i * $chunkSize
+            $length = [math]::Min($chunkSize, $fileSize - $start)
+            $bytes = $reader.ReadBytes($length)
+            $body = $isoEncoding.GetString($bytes)
+
+            $uri = "$UploadUri&comp=block&blockid=$chunkId"
+            Invoke-WebRequest -Method PUT -Uri $uri -Body $body -UseBasicParsing `
+                -Headers @{ 'Content-Type' = 'text/plain; charset=iso-8859-1'; 'x-ms-blob-type' = 'BlockBlob' } | Out-Null
+            Write-Host "    Chunk $($i + 1)/$chunkCount ($length bytes)"
+        }
+    }
+    finally { $reader.Close(); $reader.Dispose() }
+
+    # Finalize with block list
+    $xml = '<?xml version="1.0" encoding="utf-8"?><BlockList>'
+    foreach ($id in $chunkIds) { $xml += "<Latest>$id</Latest>" }
+    $xml += '</BlockList>'
+    Invoke-RestMethod -Method PUT -Uri "$UploadUri&comp=blocklist" -Body $xml `
+        -Headers @{ 'Content-Type' = 'text/plain; charset=UTF-8' } | Out-Null
+
+    Write-Host "    Upload complete ($chunkCount chunks committed)."
 }
 
 function Upload-IntuneWinFile {
