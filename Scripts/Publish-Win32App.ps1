@@ -123,15 +123,19 @@ function Export-EncryptedContent {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($IntuneWinPath)
     try {
+        Write-Host "  Zip entries: $($zip.Entries.FullName -join ', ')"
         $entry = $zip.Entries | Where-Object { $_.Name -eq $FileName } | Select-Object -First 1
         if (-not $entry) { throw "Encrypted content '$FileName' not found in $IntuneWinPath" }
 
+        Write-Host "  Extracting: $($entry.FullName) ($($entry.Length) bytes compressed, $($entry.CompressedLength) bytes in archive)"
         $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) $FileName
         $entryStream = $entry.Open()
         $fileStream = [System.IO.File]::Create($tempPath)
         try { $entryStream.CopyTo($fileStream) }
         finally { $entryStream.Dispose(); $fileStream.Dispose() }
 
+        $extractedSize = (Get-Item $tempPath).Length
+        Write-Host "  Extracted file size: $extractedSize bytes"
         return $tempPath
     }
     finally { $zip.Dispose() }
@@ -352,9 +356,9 @@ function Wait-ForFileState {
 function Send-FileContent {
     param([string] $FilePath, [string] $UploadUri)
 
-    $bytes = [System.IO.File]::ReadAllBytes($FilePath)
-    Write-Host "    Uploading file ($($bytes.Length) bytes)..."
-    Invoke-WebRequest -Method PUT -Uri $UploadUri -Body $bytes `
+    $fileSize = (Get-Item $FilePath).Length
+    Write-Host "    Uploading file ($fileSize bytes)..."
+    Invoke-WebRequest -Method PUT -Uri $UploadUri -InFile $FilePath `
         -Headers @{ 'x-ms-blob-type' = 'BlockBlob'; 'Content-Type' = 'application/octet-stream' } | Out-Null
     Write-Host "    Upload complete."
 }
@@ -389,6 +393,11 @@ function Upload-IntuneWinFile {
         Send-FileContent -FilePath $encryptedPath -UploadUri $fileInfo.azureStorageUri
 
         Write-Host "  Committing file with encryption info..."
+        Write-Host "    encryptionKey length: $($Metadata.EncryptionKey.Length)"
+        Write-Host "    mac length: $($Metadata.Mac.Length)"
+        Write-Host "    fileDigest length: $($Metadata.FileDigest.Length)"
+        Write-Host "    fileDigestAlgorithm: $($Metadata.FileDigestAlgorithm)"
+        Write-Host "    profileIdentifier: $($Metadata.ProfileIdentifier)"
         $commitBody = @{
             fileEncryptionInfo = @{
                 encryptionKey        = $Metadata.EncryptionKey
