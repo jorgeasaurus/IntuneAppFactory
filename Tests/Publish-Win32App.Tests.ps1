@@ -221,46 +221,46 @@ Describe 'Build-AppPayload' {
     }
 
     It 'builds correct odata type' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
         $result.'@odata.type' | Should -Be '#microsoft.graph.win32LobApp'
     }
     It 'sets display name from config' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
         $result.displayName | Should -Be 'Test App'
     }
     It 'maps install experience' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
         $result.installExperience.runAsAccount | Should -Be 'system'
     }
     It 'includes standard return codes' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
         $result.returnCodes.Count | Should -Be 5
         ($result.returnCodes | Where-Object { $_.returnCode -eq 0 }).type | Should -Be 'success'
         ($result.returnCodes | Where-Object { $_.returnCode -eq 3010 }).type | Should -Be 'softReboot'
     }
     It 'sets OS requirement to Graph API ceiling for W10_22H2' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
         $result.minimumSupportedOperatingSystem.v10_21H1 | Should -Be $true
     }
     It 'sets deviceRestartBehavior when provided' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
         $result.deviceRestartBehavior | Should -Be 'suppress'
     }
     It 'excludes icon when not provided' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
         $result.ContainsKey('largeIcon') | Should -Be $false
     }
     It 'includes icon when base64 is provided' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName 'Deploy-Application.exe' -IconBase64 'AAAA'
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName 'Deploy-Application.exe' -IntuneWinFileName 'Deploy-Application.intunewin' -IconBase64 'AAAA'
         $result.largeIcon.value | Should -Be 'AAAA'
         $result.largeIcon.type | Should -Be 'image/png'
     }
     It 'passes detection rules through' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
         $result.rules.Count | Should -Be 1
     }
     It 'includes setupFilePath from parameter' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
         $result.setupFilePath | Should -Be 'Deploy-Application.exe'
     }
 }

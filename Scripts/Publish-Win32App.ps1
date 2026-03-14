@@ -208,7 +208,7 @@ function Build-OsRequirement {
 }
 
 function Build-AppPayload {
-    param([hashtable] $Config, [array] $DetectionRules, [string] $IconBase64, [string] $SetupFileName)
+    param([hashtable] $Config, [array] $DetectionRules, [string] $IconBase64, [string] $SetupFileName, [string] $IntuneWinFileName)
 
     $info = $Config.Information
     $prog = $Config.Program
@@ -224,6 +224,7 @@ function Build-AppPayload {
         informationUrl                  = $info.InformationURL ?? $null
         privacyInformationUrl           = $info.PrivacyURL ?? $null
         notes                           = $info.Notes ?? ''
+        fileName                        = $IntuneWinFileName
         setupFilePath                   = $SetupFileName
         installCommandLine              = $prog.InstallCommand
         uninstallCommandLine            = $prog.UninstallCommand
@@ -467,7 +468,8 @@ $metadata = Get-IntuneWinMetadata -IntuneWinPath $IntuneWinPath
 $detectionRules = Build-DetectionRules -Rules $config.DetectionRule -AppFolder $AppFolder
 $iconBase64 = Resolve-IconBase64 -AppFolder $AppFolder -IconRef ($config.PackageInformation.IconFile ?? $config.PackageInformation.IconURL)
 $setupFileName = $config.PackageInformation.SetupFile ?? $metadata.SetupFile ?? 'Deploy-Application.exe'
-$payload = Build-AppPayload -Config $config -DetectionRules $detectionRules -IconBase64 $iconBase64 -SetupFileName $setupFileName
+$intuneWinFileName = $metadata.FileName ?? (Split-Path $IntuneWinPath -Leaf)
+$payload = Build-AppPayload -Config $config -DetectionRules $detectionRules -IconBase64 $iconBase64 -SetupFileName $setupFileName -IntuneWinFileName $intuneWinFileName
 $appId = New-OrUpdateApp -Headers $headers -Payload $payload
 Write-Host "  App ID: $appId"
 
