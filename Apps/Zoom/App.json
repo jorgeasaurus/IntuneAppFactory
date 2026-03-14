@@ -1,0 +1,36 @@
+{
+  "PackageInformation": {
+    "SetupType": "MSI",
+    "SetupFile": "Deploy-Application.exe",
+    "IconFile": "Icon.png"
+  },
+  "Information": {
+    "DisplayName": "Zoom Workplace",
+    "Description": "Video conferencing and collaboration platform",
+    "Publisher": "Zoom Video Communications",
+    "Developer": "Zoom Video Communications, Inc.",
+    "InformationURL": "https://zoom.us",
+    "PrivacyURL": "https://zoom.us/privacy"
+  },
+  "Program": {
+    "InstallCommand": "Deploy-Application.exe install",
+    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallExperience": "system",
+    "DeviceRestartBehavior": "suppress"
+  },
+  "RequirementRule": {
+    "MinimumRequiredOperatingSystem": "W10_22H2",
+    "Architecture": "x64"
+  },
+  "DetectionRule": [
+    {
+      "DetectionType": "File",
+      "Path": "C:\\Program Files\\Zoom\\bin",
+      "FileOrFolderName": "Zoom.exe",
+      "FileDetectionType": "exists"
+    }
+  ],
+  "Assignment": [
+    { "Target": "AllUsers", "Intent": "available", "Notification": "showAll" }
+  ]
+}

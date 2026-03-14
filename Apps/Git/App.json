@@ -1,0 +1,36 @@
+{
+  "PackageInformation": {
+    "SetupType": "EXE",
+    "SetupFile": "Deploy-Application.exe",
+    "IconFile": "Icon.png"
+  },
+  "Information": {
+    "DisplayName": "Git for Windows",
+    "Description": "Distributed version control system",
+    "Publisher": "The Git Project",
+    "Developer": "Software Freedom Conservancy",
+    "InformationURL": "https://gitforwindows.org",
+    "PrivacyURL": "https://github.com/git-for-windows/git/wiki/FAQ"
+  },
+  "Program": {
+    "InstallCommand": "Deploy-Application.exe install",
+    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallExperience": "system",
+    "DeviceRestartBehavior": "suppress"
+  },
+  "RequirementRule": {
+    "MinimumRequiredOperatingSystem": "W10_22H2",
+    "Architecture": "x64"
+  },
+  "DetectionRule": [
+    {
+      "DetectionType": "File",
+      "Path": "C:\\Program Files\\Git\\cmd",
+      "FileOrFolderName": "git.exe",
+      "FileDetectionType": "exists"
+    }
+  ],
+  "Assignment": [
+    { "Target": "AllUsers", "Intent": "available", "Notification": "showAll" }
+  ]
+}

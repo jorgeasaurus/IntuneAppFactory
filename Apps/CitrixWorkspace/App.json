@@ -1,0 +1,36 @@
+{
+  "PackageInformation": {
+    "SetupType": "EXE",
+    "SetupFile": "Deploy-Application.exe",
+    "IconFile": "Icon.png"
+  },
+  "Information": {
+    "DisplayName": "Citrix Workspace",
+    "Description": "Citrix Workspace app for accessing virtual apps and desktops",
+    "Publisher": "Citrix",
+    "Developer": "Cloud Software Group, Inc.",
+    "InformationURL": "https://www.citrix.com/products/receiver.html",
+    "PrivacyURL": "https://www.cloud.com/privacy-policy"
+  },
+  "Program": {
+    "InstallCommand": "Deploy-Application.exe install",
+    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallExperience": "system",
+    "DeviceRestartBehavior": "suppress"
+  },
+  "RequirementRule": {
+    "MinimumRequiredOperatingSystem": "W10_22H2",
+    "Architecture": "x64"
+  },
+  "DetectionRule": [
+    {
+      "DetectionType": "File",
+      "Path": "C:\\Program Files (x86)\\Citrix\\ICA Client",
+      "FileOrFolderName": "wfica32.exe",
+      "FileDetectionType": "exists"
+    }
+  ],
+  "Assignment": [
+    { "Target": "AllUsers", "Intent": "available", "Notification": "showAll" }
+  ]
+}

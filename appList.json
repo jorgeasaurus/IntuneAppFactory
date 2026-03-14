@@ -1,44 +1,145 @@
 [
     {
         "IntuneAppName": "7-Zip",
-        "IntuneAppNamingConvention": "PublisherAppNameAppVersion",
         "AppPublisher": "Igor Pavlov",
         "AppSource": "Evergreen",
         "AppID": "7zip",
         "AppFolderName": "7zip",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/7-zip.png",
         "FilterOptions": [
-            {
-                "Architecture": "x64",
-                "Type": "msi"
-            }
+            { "Architecture": "x64", "Type": "msi" }
         ]
     },
     {
         "IntuneAppName": "Notepad++",
-        "IntuneAppNamingConvention": "AppName",
         "AppPublisher": "Don Ho",
         "AppSource": "Evergreen",
         "AppID": "NotepadPlusPlus",
         "AppFolderName": "NotepadPlusPlus",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/notepad-plus-plus.png",
         "FilterOptions": [
-            {
-                "Architecture": "x64",
-                "Type": "exe"
-            }
+            { "Architecture": "x64", "Type": "exe" }
         ]
     },
     {
-        "IntuneAppName": "VLC",
-        "IntuneAppNamingConvention": "AppNameAndVersion",
+        "IntuneAppName": "VLC Media Player",
         "AppPublisher": "VideoLAN",
         "AppSource": "Evergreen",
         "AppID": "VideoLanVlcPlayer",
         "AppFolderName": "VLC",
+        "IconUrl": "https://images.videolan.org/images/VLC-IconSmall.png",
         "FilterOptions": [
-            {
-                "Architecture": "x64",
-                "Type": "msi"
-            }
+            { "Architecture": "x64", "Type": "msi" }
+        ]
+    },
+    {
+        "IntuneAppName": "Google Chrome",
+        "AppPublisher": "Google",
+        "AppSource": "Evergreen",
+        "AppID": "GoogleChromeEnterprise",
+        "AppFolderName": "GoogleChrome",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/google-chrome.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "msi" }
+        ]
+    },
+    {
+        "IntuneAppName": "Mozilla Firefox",
+        "AppPublisher": "Mozilla",
+        "AppSource": "Evergreen",
+        "AppID": "MozillaFirefox",
+        "AppFolderName": "MozillaFirefox",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/firefox.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "msi", "Channel": "LATEST_FIREFOX_VERSION", "Language": "en-US" }
+        ]
+    },
+    {
+        "IntuneAppName": "Microsoft Edge",
+        "AppPublisher": "Microsoft",
+        "AppSource": "Evergreen",
+        "AppID": "MicrosoftEdge",
+        "AppFolderName": "MicrosoftEdge",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/microsoft-edge.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "msi", "Channel": "Stable" }
+        ]
+    },
+    {
+        "IntuneAppName": "Zoom",
+        "AppPublisher": "Zoom Video Communications",
+        "AppSource": "Evergreen",
+        "AppID": "Zoom",
+        "AppFolderName": "Zoom",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/zoom.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "msi" }
+        ]
+    },
+    {
+        "IntuneAppName": "Citrix Workspace",
+        "AppPublisher": "Citrix",
+        "AppSource": "Evergreen",
+        "AppID": "CitrixWorkspaceApp",
+        "AppFolderName": "CitrixWorkspace",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/citrix.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "exe", "Stream": "Current" }
+        ]
+    },
+    {
+        "IntuneAppName": "PuTTY",
+        "AppPublisher": "Simon Tatham",
+        "AppSource": "Evergreen",
+        "AppID": "PuTTY",
+        "AppFolderName": "PuTTY",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/putty.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "msi" }
+        ]
+    },
+    {
+        "IntuneAppName": "FileZilla",
+        "AppPublisher": "Tim Kosse",
+        "AppSource": "Evergreen",
+        "AppID": "FileZillaClient",
+        "AppFolderName": "FileZilla",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/filezilla.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "exe" }
+        ]
+    },
+    {
+        "IntuneAppName": "Visual Studio Code",
+        "AppPublisher": "Microsoft",
+        "AppSource": "Evergreen",
+        "AppID": "MicrosoftVisualStudioCode",
+        "AppFolderName": "VSCode",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/visual-studio-code.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "exe", "Channel": "Stable" }
+        ]
+    },
+    {
+        "IntuneAppName": "Git for Windows",
+        "AppPublisher": "The Git Project",
+        "AppSource": "Evergreen",
+        "AppID": "GitForWindows",
+        "AppFolderName": "Git",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/git.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "exe" }
+        ]
+    },
+    {
+        "IntuneAppName": "KeePassXC",
+        "AppPublisher": "KeePassXC Team",
+        "AppSource": "Evergreen",
+        "AppID": "KeePassXCTeamKeePassXC",
+        "AppFolderName": "KeePassXC",
+        "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/keepassxc.png",
+        "FilterOptions": [
+            { "Architecture": "x64", "Type": "msi" }
         ]
     }
 ]

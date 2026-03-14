@@ -1,0 +1,36 @@
+{
+  "PackageInformation": {
+    "SetupType": "EXE",
+    "SetupFile": "Deploy-Application.exe",
+    "IconFile": "Icon.png"
+  },
+  "Information": {
+    "DisplayName": "Visual Studio Code",
+    "Description": "Free source-code editor by Microsoft for Windows, Linux and macOS",
+    "Publisher": "Microsoft",
+    "Developer": "Microsoft Corporation",
+    "InformationURL": "https://code.visualstudio.com",
+    "PrivacyURL": "https://privacy.microsoft.com/"
+  },
+  "Program": {
+    "InstallCommand": "Deploy-Application.exe install",
+    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallExperience": "system",
+    "DeviceRestartBehavior": "suppress"
+  },
+  "RequirementRule": {
+    "MinimumRequiredOperatingSystem": "W10_22H2",
+    "Architecture": "x64"
+  },
+  "DetectionRule": [
+    {
+      "DetectionType": "File",
+      "Path": "C:\\Program Files\\Microsoft VS Code",
+      "FileOrFolderName": "Code.exe",
+      "FileDetectionType": "exists"
+    }
+  ],
+  "Assignment": [
+    { "Target": "AllUsers", "Intent": "available", "Notification": "showAll" }
+  ]
+}

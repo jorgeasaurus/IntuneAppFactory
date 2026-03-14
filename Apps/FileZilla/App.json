@@ -1,0 +1,36 @@
+{
+  "PackageInformation": {
+    "SetupType": "EXE",
+    "SetupFile": "Deploy-Application.exe",
+    "IconFile": "Icon.png"
+  },
+  "Information": {
+    "DisplayName": "FileZilla",
+    "Description": "Free, open-source FTP, FTPS and SFTP client",
+    "Publisher": "Tim Kosse",
+    "Developer": "Tim Kosse",
+    "InformationURL": "https://filezilla-project.org",
+    "PrivacyURL": "https://filezilla-project.org/privacy.php"
+  },
+  "Program": {
+    "InstallCommand": "Deploy-Application.exe install",
+    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallExperience": "system",
+    "DeviceRestartBehavior": "suppress"
+  },
+  "RequirementRule": {
+    "MinimumRequiredOperatingSystem": "W10_22H2",
+    "Architecture": "x64"
+  },
+  "DetectionRule": [
+    {
+      "DetectionType": "File",
+      "Path": "C:\\Program Files\\FileZilla FTP Client",
+      "FileOrFolderName": "filezilla.exe",
+      "FileDetectionType": "exists"
+    }
+  ],
+  "Assignment": [
+    { "Target": "AllUsers", "Intent": "available", "Notification": "showAll" }
+  ]
+}

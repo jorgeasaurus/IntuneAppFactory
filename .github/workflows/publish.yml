@@ -45,8 +45,12 @@ jobs:
               appName     = $app.IntuneAppName
               appFolder   = $folder
               evergreenId = $app.AppID
+              iconUrl     = $app.IconUrl ?? ''
               filterArch  = ($app.FilterOptions | Select-Object -First 1).Architecture
               filterType  = ($app.FilterOptions | Select-Object -First 1).Type
+              filterChan  = ($app.FilterOptions | Select-Object -First 1).Channel
+              filterLang  = ($app.FilterOptions | Select-Object -First 1).Language
+              filterStrm  = ($app.FilterOptions | Select-Object -First 1).Stream
             }
           }
 
@@ -93,8 +97,14 @@ jobs:
 
           $arch = '${{ matrix.filterArch }}'
           $type = '${{ matrix.filterType }}'
+          $chan = '${{ matrix.filterChan }}'
+          $lang = '${{ matrix.filterLang }}'
+          $strm = '${{ matrix.filterStrm }}'
           if ($arch) { $apps = $apps | Where-Object { $_.Architecture -eq $arch } }
           if ($type) { $apps = $apps | Where-Object { $_.Type -eq $type } }
+          if ($chan) { $apps = $apps | Where-Object { $_.Channel -eq $chan } }
+          if ($lang) { $apps = $apps | Where-Object { $_.Language -eq $lang } }
+          if ($strm) { $apps = $apps | Where-Object { $_.Stream -eq $strm } }
           $app = $apps | Sort-Object { try { [version]($_.Version -replace '[^0-9.]','') } catch { [version]'0.0' } } -Descending |
             Select-Object -First 1
 
@@ -109,6 +119,33 @@ jobs:
           Write-Host "Downloaded: $outPath ($('{0:N1} MB' -f ((Get-Item $outPath).Length / 1MB)))"
 
           "APP_VERSION=$($app.Version)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Download app icon
+        shell: pwsh
+        run: |
+          $iconUrl  = '${{ matrix.iconUrl }}'
+          $iconPath = Join-Path '${{ matrix.appFolder }}' 'Icon.png'
+
+          if (Test-Path $iconPath) {
+            $size = (Get-Item $iconPath).Length
+            if ($size -gt 200) {
+              Write-Host "Using existing Icon.png ($size bytes)"
+              return
+            }
+            Write-Host "Existing Icon.png is a placeholder ($size bytes) — replacing from CDN"
+          }
+
+          if (-not $iconUrl) {
+            Write-Host "No IconUrl configured — skipping icon download"
+            return
+          }
+
+          try {
+            Invoke-WebRequest -Uri $iconUrl -OutFile $iconPath -UseBasicParsing
+            Write-Host "Downloaded icon: $iconPath ($('{0:N1} KB' -f ((Get-Item $iconPath).Length / 1KB)))"
+          } catch {
+            Write-Warning "Failed to download icon from $iconUrl — $_"
+          }
 
       - name: Prepare PSADT package folder
         shell: pwsh
