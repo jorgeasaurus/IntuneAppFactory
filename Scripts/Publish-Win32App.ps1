@@ -359,10 +359,17 @@ function Send-FileContent {
     $fileSize = (Get-Item $FilePath).Length
     Write-Host "    Uploading file ($fileSize bytes)..."
 
-    $webClient = [System.Net.WebClient]::new()
-    $webClient.Headers['x-ms-blob-type'] = 'BlockBlob'
-    $webClient.UploadFile($UploadUri, 'PUT', $FilePath)
-    $webClient.Dispose()
+    $bytes = [System.IO.File]::ReadAllBytes($FilePath)
+    $uri = [System.Uri]::new($UploadUri)
+    $request = [System.Net.HttpWebRequest]::Create($uri)
+    $request.Method = 'PUT'
+    $request.ContentLength = $bytes.Length
+    $request.Headers['x-ms-blob-type'] = 'BlockBlob'
+    $stream = $request.GetRequestStream()
+    $stream.Write($bytes, 0, $bytes.Length)
+    $stream.Close()
+    $response = $request.GetResponse()
+    $response.Close()
 
     Write-Host "    Upload complete."
 }
