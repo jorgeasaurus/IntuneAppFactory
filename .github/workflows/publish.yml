@@ -21,9 +21,11 @@ jobs:
       - name: Build matrix from appList.json
         id: matrix
         shell: pwsh
+        env:
+          APPS_FILTER: ${{ github.event.inputs.apps }}
         run: |
           $appList = Get-Content -Raw 'appList.json' | ConvertFrom-Json
-          $filter  = '${{ github.event.inputs.apps }}'.Trim()
+          $filter  = ($env:APPS_FILTER ?? '').Trim()
 
           if ($filter) {
             $names   = $filter -split ',' | ForEach-Object { $_.Trim() }

@@ -75,7 +75,8 @@ function Invoke-Graph {
             return Invoke-RestMethod @params
         }
         catch {
-            $status = $_.Exception.Response.StatusCode.value__
+            $resp = $_.Exception.Response
+            $status = if ($resp) { $resp.StatusCode.value__ } else { 0 }
             $retryable = $status -in @(429, 500, 502, 503, 504)
             if (-not $retryable -or $attempt -eq $MaxRetries) { throw }
 
@@ -245,6 +246,7 @@ function Build-AppPayload {
         description                     = $info.Description ?? ''
         publisher                       = $info.Publisher ?? ''
         developer                       = $info.Developer ?? ''
+        appVersion                      = $info.AppVersion ?? ''
         informationUrl                  = $info.InformationURL ?? $null
         privacyInformationUrl           = $info.PrivacyURL ?? $null
         notes                           = $info.Notes ?? ''
@@ -470,8 +472,8 @@ function Resolve-AssignmentTarget {
             if ($Assignment.GroupID) {
                 return @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = $Assignment.GroupID }
             }
-            Write-Warning "No GroupID for target '$target' — defaulting to AllUsers"
-            return @{ '@odata.type' = '#microsoft.graph.allLicensedUsersAssignmentTarget' }
+            Write-Warning "No GroupID for target '$target' — skipping assignment"
+            return $null
         }
     }
 }
@@ -482,10 +484,12 @@ function Set-AppAssignments {
     if (-not $Assignments -or $Assignments.Count -eq 0) { return }
 
     $graphAssignments = @($Assignments | ForEach-Object {
+        $resolved = Resolve-AssignmentTarget $_
+        if (-not $resolved) { return }
         @{
             '@odata.type' = '#microsoft.graph.mobileAppAssignment'
             intent        = ($_.Intent ?? 'available').ToLower()
-            target        = (Resolve-AssignmentTarget $_)
+            target        = $resolved
             settings      = @{
                 '@odata.type'                = '#microsoft.graph.win32LobAppAssignmentSettings'
                 notifications                = $_.Notification ?? 'showAll'

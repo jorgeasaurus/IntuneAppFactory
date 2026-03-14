@@ -302,11 +302,10 @@ Describe 'Resolve-AssignmentTarget' {
         $result.'@odata.type' | Should -Be '#microsoft.graph.groupAssignmentTarget'
         $result.groupId | Should -Be 'abc-123'
     }
-    It 'falls back to AllUsers when group has no GroupID' {
+    It 'returns null when group has no GroupID' {
         $assignment = [PSCustomObject]@{ Target = 'MyGroup' }
-        $result = Resolve-AssignmentTarget -Assignment $assignment 3>&1
-        # The function returns AllUsers and emits a warning
-        $result.'@odata.type' | Should -Be '#microsoft.graph.allLicensedUsersAssignmentTarget'
+        $result = Resolve-AssignmentTarget -Assignment $assignment 3>$null
+        $result | Should -BeNullOrEmpty
     }
 }
 
