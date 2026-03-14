@@ -43,11 +43,11 @@ Describe 'ConvertTo-BoolFromString' {
 }
 
 Describe 'Build-OsRequirement' {
-    It 'maps W10_22H2 to highest valid Graph API property v10_21H2' {
-        Build-OsRequirement 'W10_22H2' | Should -Be 'v10_21H2'
+    It 'maps W10_22H2 to highest valid Graph API property v10_21H1' {
+        Build-OsRequirement 'W10_22H2' | Should -Be 'v10_21H1'
     }
-    It 'maps W11_24H2 to v10_21H2 (Graph API ceiling)' {
-        Build-OsRequirement 'W11_24H2' | Should -Be 'v10_21H2'
+    It 'maps W11_24H2 to v10_21H1 (Graph API ceiling)' {
+        Build-OsRequirement 'W11_24H2' | Should -Be 'v10_21H1'
     }
     It 'returns default v10_1607 for unknown input' {
         Build-OsRequirement 'UNKNOWN' | Should -Be 'v10_1607'
@@ -62,11 +62,14 @@ Describe 'Build-OsRequirement' {
             $result | Should -Match '^v10_' -Because "$v should map to a v10_ value"
         }
     }
-    It 'maps all Windows 11 versions to v10_21H2 (Graph API ceiling)' {
+    It 'maps W10_20H2 to v10_2H20 (Graph API uses swapped format)' {
+        Build-OsRequirement 'W10_20H2' | Should -Be 'v10_2H20'
+    }
+    It 'maps all Windows 11 versions to v10_21H1 (Graph API ceiling)' {
         $w11Versions = @('W11_21H2','W11_22H2','W11_23H2','W11_24H2')
         foreach ($v in $w11Versions) {
             $result = Build-OsRequirement $v
-            $result | Should -Be 'v10_21H2' -Because "$v should map to Graph API ceiling v10_21H2"
+            $result | Should -Be 'v10_21H1' -Because "$v should map to Graph API ceiling v10_21H1"
         }
     }
 }
@@ -234,7 +237,7 @@ Describe 'Build-AppPayload' {
     }
     It 'sets OS requirement to Graph API ceiling for W10_22H2' {
         $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules
-        $result.minimumSupportedOperatingSystem.v10_21H2 | Should -Be $true
+        $result.minimumSupportedOperatingSystem.v10_21H1 | Should -Be $true
     }
     It 'sets deviceRestartBehavior when provided' {
         $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules
