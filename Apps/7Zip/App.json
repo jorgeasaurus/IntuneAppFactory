@@ -1,61 +1,56 @@
 {
-    "PackageInformation": {
-        "SetupType": "EXE",
-        "SetupFile": "Deploy-Application.exe",
-        "SourceFolder": "Source",
-        "OutputFolder": "Package",
-        "IconFile": "",
-        "IconURL": "https://mseazdevopsapps.blob.core.windows.net/icons/7Zip.png"
-    },
-    "Information": {
-        "DisplayName": "<replaced_by_pipeline>",
-        "AppVersion": "<replaced_by_pipeline>",
-        "Description": "Install 7-Zip",
-        "Publisher": "<replaced_by_pipeline>",
-        "Notes": "",
-        "Owner": "",
-        "ScopeTagName": ""
-    },
-    "Program": {
-        "InstallCommand": "Deploy-Application.exe Install",
-        "UninstallCommand": "Deploy-Application.exe Uninstall",
-        "InstallExperience": "system",
-        "DeviceRestartBehavior": "suppress"
-    },
-    "RequirementRule": {
-        "MinimumSupportedWindowsRelease": "W10_22H2",
-        "Architecture": "x64"
-    },
-    "CustomRequirementRule": [
-    ],
-    "DetectionRule": [
-        {
-            "Type": "File",
-            "DetectionMethod": "Version",
-            "DetectionType": "version",
-            "Path": "%ProgramFiles%\\7-Zip",
-            "FileOrFolder": "7z.exe",
-            "Operator": "greaterThanOrEqual",
-            "VersionValue": "<replaced_by_pipeline>",
-            "Check32BitOn64System": "false"
-        }
-    ],
-    "Assignment": [
-        {
-            "Type": "VirtualGroup",
-            "GroupName": "AllDevices",
-            "Intent": "available",
-            "Notification": "showAll",
-            "UseLocalTime": true,
-            "FilterName": "",
-            "FilterMode": "",
-            "AvailableTime": "",
-            "DeadlineTime": "",
-            "DeliveryOptimizationPriority": "",
-            "EnableRestartGracePeriod": "",
-            "RestartGracePeriodInMinutes": "",
-            "RestartCountDownDisplayInMinutes": "",
-            "RestartNotificationSnoozeInMinutes": ""
-        }
-    ]
+  "PackageInformation": {
+    "SetupType": "MSI",
+    "SetupFile": "Deploy-Application.exe",
+    "SourceFolder": "Source",
+    "OutputFolder": "Package",
+    "Version": "25.01",
+    "SourceURL": "https://www.7-zip.org",
+    "IconFile": "Icon.png"
+  },
+  "Information": {
+    "DisplayName": "7-Zip",
+    "AppVersion": "25.01",
+    "Description": "7-Zip is a file archiver with a high compression ratio",
+    "Publisher": "Igor Pavlov",
+    "Developer": "Igor Pavlov",
+    "CompanyPortalFeaturedApp": "false",
+    "InformationURL": "https://www.7-zip.org",
+    "PrivacyURL": "https://www.7-zip.org",
+    "Notes": "File archiver utility"
+  },
+  "Program": {
+    "InstallCommand": "Deploy-Application.exe install",
+    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallExperience": "system",
+    "DeviceRestartBehavior": "suppress"
+  },
+  "RequirementRule": {
+    "MinimumRequiredOperatingSystem": "W10_22H2",
+    "Architecture": "x64"
+  },
+  "DetectionRule": [
+    {
+      "DetectionType": "File",
+      "Path": "C:\\Program Files\\7-Zip",
+      "FileOrFolderName": "7z.exe",
+      "FileDetectionType": "exists",
+      "check32BitOn64System": "false"
+    }
+  ],
+  "Assignment": [
+    {
+      "Target": "AllUsers",
+      "Intent": "available",
+      "Notification": "showAll",
+      "AvailableTime": "",
+      "DeadlineTime": "",
+      "UseLocalTime": "true",
+      "DeliveryOptimizationPriority": "notConfigured",
+      "EnableRestartGracePeriod": "false",
+      "RestartGracePeriod": "",
+      "RestartCountDownDisplay": "",
+      "RestartNotificationSnooze": ""
+    }
+  ]
 }

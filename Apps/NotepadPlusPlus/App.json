@@ -1,61 +1,58 @@
 {
-    "PackageInformation": {
-        "SetupType": "EXE",
-        "SetupFile": "Deploy-Application.exe",
-        "SourceFolder": "Source",
-        "OutputFolder": "Package",
-        "IconFile": "Icon.png",
-        "IconURL": ""
-    },
-    "Information": {
-        "DisplayName": "<replaced_by_pipeline>",
-        "AppVersion": "<replaced_by_pipeline>",
-        "Description": "Install Notepad++",
-        "Publisher": "<replaced_by_pipeline>",
-        "Notes": "",
-        "Owner": "",
-        "ScopeTagName": ""
-    },
-    "Program": {
-        "InstallCommand": "Deploy-Application.exe Install",
-        "UninstallCommand": "Deploy-Application.exe Uninstall",
-        "InstallExperience": "system",
-        "DeviceRestartBehavior": "suppress"
-    },
-    "RequirementRule": {
-        "MinimumSupportedWindowsRelease": "W10_22H2",
-        "Architecture": "x64"
-    },
-    "CustomRequirementRule": [
-    ],
-    "DetectionRule": [
-        {
-            "Type": "Registry",
-            "DetectionMethod": "VersionComparison",
-            "DetectionType": "string",
-            "KeyPath": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Notepad++",
-            "ValueName": "DisplayVersion",
-            "Operator": "greaterThanOrEqual",
-            "Value": "<replaced_by_pipeline>",
-            "Check32BitOn64System": "false"
-        }
-    ],
-    "Assignment": [
-        {
-            "Type": "VirtualGroup",
-            "GroupName": "AllDevices",
-            "Intent": "available",
-            "Notification": "showAll",
-            "UseLocalTime": true,
-            "FilterName": "",
-            "FilterMode": "",
-            "AvailableTime": "",
-            "DeadlineTime": "",
-            "DeliveryOptimizationPriority": "",
-            "EnableRestartGracePeriod": "",
-            "RestartGracePeriodInMinutes": "",
-            "RestartCountDownDisplayInMinutes": "",
-            "RestartNotificationSnoozeInMinutes": ""
-        }
-    ]
+  "PackageInformation": {
+    "SetupType": "EXE",
+    "SetupFile": "Deploy-Application.exe",
+    "SourceFolder": "Source",
+    "OutputFolder": "Package",
+    "Version": "8.8.3",
+    "SourceURL": "https://notepad-plus-plus.org",
+    "IconFile": "Icon.png"
+  },
+  "Information": {
+    "DisplayName": "Notepad++",
+    "AppVersion": "8.8.3",
+    "Description": "Notepad++ is a free source code editor and Notepad replacement",
+    "Publisher": "Don Ho",
+    "Developer": "Don Ho",
+    "CompanyPortalFeaturedApp": "false",
+    "InformationURL": "https://notepad-plus-plus.org",
+    "PrivacyURL": "https://notepad-plus-plus.org",
+    "Notes": "Free source code editor"
+  },
+  "Program": {
+    "InstallCommand": "Deploy-Application.exe install",
+    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallExperience": "system",
+    "DeviceRestartBehavior": "suppress"
+  },
+  "RequirementRule": {
+    "MinimumRequiredOperatingSystem": "W10_22H2",
+    "Architecture": "x64"
+  },
+  "DetectionRule": [
+    {
+      "DetectionType": "Registry",
+      "KeyPath": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Notepad++",
+      "ValueName": "DisplayVersion",
+      "RegistryDetectionType": "versionComparison",
+      "Operator": "greaterThanOrEqual",
+      "Value": "8.8.3",
+      "check32BitOn64System": "true"
+    }
+  ],
+  "Assignment": [
+    {
+      "Target": "AllUsers",
+      "Intent": "available",
+      "Notification": "showAll",
+      "AvailableTime": "",
+      "DeadlineTime": "",
+      "UseLocalTime": "true",
+      "DeliveryOptimizationPriority": "notConfigured",
+      "EnableRestartGracePeriod": "false",
+      "RestartGracePeriod": "",
+      "RestartCountDownDisplay": "",
+      "RestartNotificationSnooze": ""
+    }
+  ]
 }

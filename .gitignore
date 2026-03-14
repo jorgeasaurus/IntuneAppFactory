@@ -1,13 +1,14 @@
 # Tools and binaries
 Tools/
-bin/
 *.exe
+!Templates/Framework/Source/Deploy-Application.exe
 
 # Build outputs
 Downloads/
 Installers/
 Publish/
 Output/
+bin/
 
 # Pipeline artifacts
 AppsProcessList/
@@ -19,8 +20,7 @@ AppsPrepareList/
 !Templates/**/*.json
 
 # Local secrets
-.secrets.local
-*.local
+.secrets*
 
 # IDE and OS files
 .vs/
@@ -38,7 +38,6 @@ logs/
 # Test artifacts
 TestResults/
 coverage/
-.actrc
-.secrets
-act-setup.md
+
+# AI assistant config
 CLAUDE.md

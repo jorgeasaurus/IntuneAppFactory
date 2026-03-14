@@ -1,385 +1,159 @@
-name: Intune | Package & Deploy Win32 apps (matrix)
+name: Deploy Win32 Apps to Intune
 
 on:
   workflow_dispatch:
     inputs:
-      appListPath:
-        description: "Path to app list JSON (defaults to root appList.json)"
+      apps:
+        description: "Comma-separated app folder names (blank = all from appList.json)"
         required: false
-        default: "appList.json"
+        default: ""
 
 jobs:
+  # ── Plan: read appList.json → build a matrix entry per app ──
   plan:
-    name: Read app list → matrix
+    name: Build matrix
     runs-on: windows-latest
     outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
-      listPath: ${{ steps.locate.outputs.listPath }}
+      matrix: ${{ steps.matrix.outputs.result }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Locate app list
-        id: locate
+      - name: Build matrix from appList.json
+        id: matrix
         shell: pwsh
         run: |
-          $candidates = @(
-            "${{ github.event.inputs.appListPath }}",
-            "appList.json",
-            "apps.json",
-            "intune\apps.json",
-            "intune\appList.json",
-            ".github\apps.json"
-          ) | Where-Object { Test-Path $_ }
-          if (-not $candidates) { throw "No app list JSON found. Provide one via workflow input (appListPath) or add appList.json to the repo root." }
-          "listPath=$($candidates[0])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $appList = Get-Content -Raw 'appList.json' | ConvertFrom-Json
+          $filter  = '${{ github.event.inputs.apps }}'.Trim()
 
-      - name: Build matrix JSON
-        id: plan
-        shell: pwsh
-        run: |
-          $listPath = "${{ steps.locate.outputs.listPath }}"
-          $json = Get-Content -Raw -Path $listPath | ConvertFrom-Json
-          if ($json -isnot [System.Collections.IEnumerable]) { $json = @($json) }
-
-          # minimal schema check
-          foreach ($a in $json) {
-            foreach ($k in 'appName','sourceFolder','setupFile','installCmd','uninstallCmd','detection') {
-              if (-not $a.$k) { throw "Missing required key '$k' in one of the app entries." }
-            }
+          if ($filter) {
+            $names   = $filter -split ',' | ForEach-Object { $_.Trim() }
+            $appList = $appList | Where-Object { $_.AppFolderName -in $names }
+          }
+          if (-not $appList -or @($appList).Count -eq 0) {
+            throw 'No apps matched. Check appList.json or the apps input.'
           }
 
-          # Convert to compact JSON for matrix
           $matrix = @{ include = @() }
-          foreach ($a in $json) {
+          foreach ($app in @($appList)) {
+            $folder  = "Apps/$($app.AppFolderName)"
+            $appJson = Join-Path $folder 'App.json'
+            if (-not (Test-Path $appJson)) { throw "Missing $appJson for $($app.IntuneAppName)" }
+
             $matrix.include += @{
-              appName        = $a.appName
-              sourceFolder   = $a.sourceFolder
-              setupFile      = $a.setupFile
-              installCmd     = $a.installCmd
-              uninstallCmd   = $a.uninstallCmd
-              detection      = $a.detection             # e.g. "msi:{GUID}" or "file:C:\Path\app.exe,version>=1.2.3.4"
-              assignRequired = @($a.assignRequired)      # array of AAD group ObjectIds
-              assignAvailable= @($a.assignAvailable)     # array of AAD group ObjectIds
-              publisher      = $a.publisher || 'Your Org'
-              description    = $a.description || 'Deployed via GitHub Actions'
-              logoPath       = $a.logoPath
-              installExperience = $a.installExperience || 'system'   # 'system' or 'user'
-              restartBehavior   = $a.restartBehavior   || 'suppress' # 'suppress'|'force'|'basedOnReturnCode'
-              returnCodes       = @($a.returnCodes)                   # optional array, see note below
+              appName     = $app.IntuneAppName
+              appFolder   = $folder
+              evergreenId = $app.AppID
+              filterArch  = ($app.FilterOptions | Select-Object -First 1).Architecture
+              filterType  = ($app.FilterOptions | Select-Object -First 1).Type
             }
           }
-          "matrix=$($matrix | ConvertTo-Json -Compress)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-  build_deploy:
-    name: Package & deploy — ${{ matrix.appName }}
+          $json = $matrix | ConvertTo-Json -Depth 5 -Compress
+          "result=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Matrix: $json"
+
+  # ── Deploy: download → package → publish (one job per app) ──
+  deploy:
+    name: ${{ matrix.appName }}
     needs: plan
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-
     env:
-      # Secrets: support multiple common names so you don’t have to rename
-      TENANT_ID:         ${{ secrets.INTUNE_TENANT_ID != '' && secrets.INTUNE_TENANT_ID || secrets.TENANT_ID }}
-      CLIENT_ID:         ${{ secrets.INTUNE_CLIENT_ID != '' && secrets.INTUNE_CLIENT_ID || secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_CLIENT_ID || secrets.CLIENT_ID }}
-      CLIENT_SECRET:     ${{ secrets.INTUNE_CLIENT_SECRET != '' && secrets.INTUNE_CLIENT_SECRET || secrets.AZURE_CLIENT_SECRET != '' && secrets.AZURE_CLIENT_SECRET || secrets.CLIENT_SECRET }}
-      GRAPH_SCOPE:       https://graph.microsoft.com/.default
-      GRAPH_BASE:        https://graph.microsoft.com/beta
-
+      TENANT_ID:     ${{ secrets.TENANT_ID }}
+      CLIENT_ID:     ${{ secrets.CLIENT_ID }}
+      CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Validate secrets
         shell: pwsh
         run: |
-          foreach ($n in 'TENANT_ID','CLIENT_ID','CLIENT_SECRET') {
-            if (-not $env:$n) { throw "Missing secret $n (checked common aliases). Set repo secrets INTUNE_TENANT_ID/CLIENT_ID/CLIENT_SECRET (or CLIENT_ID/CLIENT_SECRET, AZURE_* variants)." }
+          @('TENANT_ID','CLIENT_ID','CLIENT_SECRET') | ForEach-Object {
+            if (-not [Environment]::GetEnvironmentVariable($_)) {
+              throw "Missing secret: $_. Configure it in repo Settings > Secrets."
+            }
           }
 
-      - name: Prepare work dirs
+      - name: Install Evergreen module
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\prep" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\out"  | Out-Null
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Evergreen -Force -Scope CurrentUser
 
-      - name: Download Win32 Content Prep Tool
+      - name: Download installer via Evergreen
         shell: pwsh
         run: |
-          $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/microsoft/Microsoft-Win32-Content-Prep-Tool/releases/latest"
-          $asset = $releases.assets | Where-Object name -match "IntuneWinAppUtil.exe"
-          if (-not $asset) { throw "Could not locate IntuneWinAppUtil.exe in latest release." }
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$env:RUNNER_TEMP\prep\IntuneWinAppUtil.exe"
+          Import-Module Evergreen
+          $apps = Get-EvergreenApp -Name '${{ matrix.evergreenId }}'
+
+          $arch = '${{ matrix.filterArch }}'
+          $type = '${{ matrix.filterType }}'
+          if ($arch) { $apps = $apps | Where-Object { $_.Architecture -eq $arch } }
+          if ($type) { $apps = $apps | Where-Object { $_.Type -eq $type } }
+          $app = $apps | Sort-Object { try { [version]($_.Version -replace '[^0-9.]','') } catch { [version]'0.0' } } -Descending |
+            Select-Object -First 1
+
+          if (-not $app) { throw "No Evergreen result for ${{ matrix.evergreenId }} (arch=$arch, type=$type)" }
+          Write-Host "Found: $($app.Version) -> $($app.URI)"
+
+          $filesDir = Join-Path '${{ matrix.appFolder }}' 'Files'
+          New-Item -ItemType Directory -Force -Path $filesDir | Out-Null
+          $fileName = Split-Path $app.URI -Leaf
+          $outPath  = Join-Path $filesDir $fileName
+          Invoke-WebRequest -Uri $app.URI -OutFile $outPath -UseBasicParsing
+          Write-Host "Downloaded: $outPath ($('{0:N1} MB' -f ((Get-Item $outPath).Length / 1MB)))"
+
+          "APP_VERSION=$($app.Version)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Prepare PSADT package folder
+        shell: pwsh
+        run: |
+          $appFolder = '${{ matrix.appFolder }}'
+          $frameworkSrc = 'Templates/Framework/Source'
+
+          Copy-Item "$frameworkSrc/Deploy-Application.exe"        -Destination $appFolder -Force
+          Copy-Item "$frameworkSrc/Deploy-Application.exe.config" -Destination $appFolder -Force
+          Copy-Item "$frameworkSrc/AppDeployToolkit" -Destination $appFolder -Recurse -Force
+
+          Write-Host "PSADT framework copied to $appFolder"
 
       - name: Package to .intunewin
         shell: pwsh
         run: |
-          $src = Resolve-Path (Join-Path $pwd "${{ matrix.sourceFolder }}")
-          & "$env:RUNNER_TEMP\prep\IntuneWinAppUtil.exe" `
-              -c $src `
-              -s "${{ matrix.setupFile }}" `
-              -o "$env:RUNNER_TEMP\out" `
-              -q
-          $win = Get-ChildItem "$env:RUNNER_TEMP\out" -Filter *.intunewin | Select-Object -First 1
-          if (-not $win) { throw "Packaging failed (no .intunewin found)." }
-          "INTUNEWIN_PATH=$($win.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $prepDir = "$env:RUNNER_TEMP\prep"
+          $outDir  = "$env:RUNNER_TEMP\out"
+          New-Item -ItemType Directory -Force -Path $prepDir, $outDir | Out-Null
 
-      - name: Write publisher script (raw Graph)
+          $headers = @{ Authorization = "Bearer ${{ secrets.GITHUB_TOKEN }}" }
+          $releases = Invoke-RestMethod 'https://api.github.com/repos/microsoft/Microsoft-Win32-Content-Prep-Tool/releases/latest' -Headers $headers
+          $asset = $releases.assets | Where-Object { $_.name -match 'IntuneWinAppUtil\.exe' } | Select-Object -First 1
+          if (-not $asset) { throw 'IntuneWinAppUtil.exe not found in latest release' }
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$prepDir\IntuneWinAppUtil.exe" -Headers @{ Accept = 'application/octet-stream'; Authorization = "Bearer ${{ secrets.GITHUB_TOKEN }}" }
+
+          $src = Resolve-Path '${{ matrix.appFolder }}'
+          & "$prepDir\IntuneWinAppUtil.exe" -c $src -s 'Deploy-Application.exe' -o $outDir -q
+
+          $intunewin = Get-ChildItem $outDir -Filter '*.intunewin' | Select-Object -First 1
+          if (-not $intunewin) { throw 'Packaging failed: no .intunewin produced' }
+          "INTUNEWIN_PATH=$($intunewin.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Packaged: $($intunewin.FullName) ($('{0:N1} MB' -f ($intunewin.Length / 1MB)))"
+
+      - name: Publish to Intune
         shell: pwsh
         run: |
-          @'
-          param(
-            [Parameter(Mandatory)] [string] $TenantId,
-            [Parameter(Mandatory)] [string] $ClientId,
-            [Parameter(Mandatory)] [string] $ClientSecret,
-            [Parameter(Mandatory)] [string] $DisplayName,
-            [Parameter(Mandatory)] [string] $IntuneWinPath,
-            [Parameter(Mandatory)] [string] $InstallCmd,
-            [Parameter(Mandatory)] [string] $UninstallCmd,
-            [Parameter(Mandatory)] [string] $Detection,         # "msi:{GUID}" OR "file:C:\Path\app.exe,version>=1.2.3.4"
-            [string[]] $AssignRequired,
-            [string[]] $AssignAvailable,
-            [string] $Publisher = "Your Org",
-            [string] $Description = "Deployed via CI",
-            [ValidateSet("system","user")] [string] $InstallExperience = "system",
-            [ValidateSet("suppress","force","basedOnReturnCode")] [string] $RestartBehavior = "suppress",
-            [hashtable[]] $ReturnCodes,
-            [string] $LogoPath,
-            [string] $GraphBase = "https://graph.microsoft.com/beta"
-          )
+          & "${{ github.workspace }}/Scripts/Publish-Win32App.ps1" `
+            -TenantId     $env:TENANT_ID `
+            -ClientId     $env:CLIENT_ID `
+            -ClientSecret $env:CLIENT_SECRET `
+            -AppFolder    '${{ matrix.appFolder }}' `
+            -IntuneWinPath $env:INTUNEWIN_PATH
 
-          function Get-GraphToken {
-            param($TenantId,$ClientId,$ClientSecret)
-            $body = @{
-              client_id     = $ClientId
-              client_secret = $ClientSecret
-              scope         = "https://graph.microsoft.com/.default"
-              grant_type    = "client_credentials"
-            }
-            $res = Invoke-RestMethod -Method POST -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" -Body $body -ContentType "application/x-www-form-urlencoded"
-            return $res.access_token
-          }
-
-          function Get-ExistingWin32App {
-            param($Headers,$GraphBase,$DisplayName)
-            $filter = "isof('microsoft.graph.win32LobApp') and displayName eq '$($DisplayName.Replace("'","''"))'"
-            $uri = "$GraphBase/deviceAppManagement/mobileApps`?$filter=$([uri]::EscapeDataString($filter))"
-            (Invoke-RestMethod -Method GET -Headers $Headers -Uri $uri).value | Select-Object -First 1
-          }
-
-          function New-DetectionRules {
-            param($Detection)
-            # Returns Graph "rules" array
-            if ($Detection -match '^msi:\s*{?[0-9a-fA-F-]{36}}?$') {
-              $guid = ($Detection -replace '^msi:\s*','').Trim('{}')
-              return @(@{
-                "@odata.type" = "#microsoft.graph.win32LobAppProductCodeDetection"
-                productCode   = "{$guid}"
-                productVersionOperator = "notConfigured"
-              })
-            }
-            elseif ($Detection -match '^file:') {
-              # Format: file:C:\Path\app.exe,version>=1.2.3.4  (version part optional)
-              $payload = $Detection -replace '^file:\s*',''
-              $parts = $payload.Split(',',2)
-              $full = $parts[0]
-              $dir  = [System.IO.Path]::GetDirectoryName($full)
-              $name = [System.IO.Path]::GetFileName($full)
-              $rule = @{
-                "@odata.type"  = "#microsoft.graph.win32LobAppFileSystemDetection"
-                path           = $dir
-                fileOrFolderName = $name
-                detectionType  = "exists"
-                operator       = "notConfigured"
-                check32BitOn64System = $true
-              }
-              if ($parts.Count -gt 1 -and $parts[1] -match 'version\s*>=\s*([\d\.]+)') {
-                $rule.detectionType = "version"
-                $rule.operator = "greaterThanOrEqual"
-                $rule.versionValue = $matches[1]
-              }
-              return @($rule)
-            }
-            else {
-              throw "Unsupported detection format: $Detection"
-            }
-          }
-
-          function Ensure-Win32App {
-            param($Headers,$GraphBase,$DisplayName,$Publisher,$Description,$InstallCmd,$UninstallCmd,$InstallExperience,$RestartBehavior,$Rules,$LogoPath,$ReturnCodes)
-
-            $existing = Get-ExistingWin32App -Headers $Headers -GraphBase $GraphBase -DisplayName $DisplayName
-            $payload = @{
-              "@odata.type"        = "#microsoft.graph.win32LobApp"
-              displayName          = $DisplayName
-              description          = $Description
-              publisher            = $Publisher
-              installExperience    = @{ runAsAccount = $InstallExperience }
-              restartBehavior      = $RestartBehavior
-              installCommandLine   = $InstallCmd
-              uninstallCommandLine = $UninstallCmd
-              rules                = $Rules
-            }
-            if ($ReturnCodes) { $payload.returnCodes = $ReturnCodes }
-
-            if ($LogoPath -and (Test-Path $LogoPath)) {
-              $bytes = [System.IO.File]::ReadAllBytes($LogoPath)
-              $b64   = [Convert]::ToBase64String($bytes)
-              $payload.largeIcon = @{
-                "@odata.type" = "#microsoft.graph.mimeContent"
-                type = "image/png"
-                value = $b64
-              }
-            }
-
-            if ($existing) {
-              $uri = "$GraphBase/deviceAppManagement/mobileApps/$($existing.id)"
-              Invoke-RestMethod -Method PATCH -Headers $Headers -Uri $uri -Body ($payload | ConvertTo-Json -Depth 10)
-              return $existing.id
-            } else {
-              $uri = "$GraphBase/deviceAppManagement/mobileApps"
-              $created = Invoke-RestMethod -Method POST -Headers $Headers -Uri $uri -Body ($payload | ConvertTo-Json -Depth 10)
-              return $created.id
-            }
-          }
-
-          function Upload-IntuneWin {
-            param($Headers,$GraphBase,$AppId,$IntuneWinPath)
-
-            # 1) Create (or get) content version
-            $cv = Invoke-RestMethod -Method POST -Headers $Headers -Uri "$GraphBase/deviceAppManagement/mobileApps/$AppId/microsoft.graph.win32LobApp/contentVersions" -Body "{}"
-            $contentVersionId = $cv.id
-
-            # 2) Register file
-            $fi = Get-Item $IntuneWinPath
-            $regPayload = @{
-              name = $fi.Name
-              size = [int64]$fi.Length
-              sizeEncrypted = [int64]$fi.Length
-              manifest      = $null
-              isDependency  = $false
-            }
-            $rf = Invoke-RestMethod -Method POST -Headers $Headers -Uri "$GraphBase/deviceAppManagement/mobileApps/$AppId/microsoft.graph.win32LobApp/contentVersions/$contentVersionId/files" -Body ($regPayload | ConvertTo-Json -Depth 5)
-            $fileId = $rf.id
-
-            # 3) Create upload session
-            $us = Invoke-RestMethod -Method POST -Headers $Headers -Uri "$GraphBase/deviceAppManagement/mobileApps/$AppId/microsoft.graph.win32LobApp/contentVersions/$contentVersionId/files/$fileId/microsoft.graph.createUploadSession" -Body "{}"
-            $uploadUrl = $us.uploadUrl
-
-            # 4) Chunked upload
-            $chunk = 1024*1024*5  # 5MB
-            $fs = [System.IO.File]::OpenRead($IntuneWinPath)
-            try {
-              $offset = 0L
-              $buffer = New-Object byte[] $chunk
-              while (($read = $fs.Read($buffer,0,$buffer.Length)) -gt 0) {
-                $start = $offset
-                $end   = $offset + $read - 1
-                $total = $fi.Length
-                $range = "bytes $start-$end/$total"
-                $slice = if ($read -eq $buffer.Length) { $buffer } else { $buffer[0..($read-1)] }
-
-                Invoke-WebRequest -Method PUT -Uri $uploadUrl -Headers @{ "Content-Range" = $range } -Body $slice | Out-Null
-                $offset += $read
-              }
-            } finally {
-              $fs.Dispose()
-            }
-
-            # 5) Commit (Graph commits automatically after final PUT; ensure processing finishes)
-            Start-Sleep -Seconds 5
-            return $contentVersionId
-          }
-
-          function Assign-App {
-            param($Headers,$GraphBase,$AppId,$AssignRequired,$AssignAvailable)
-            $assignments = @()
-
-            foreach ($gid in @($AssignRequired)) {
-              if (-not $gid) { continue }
-              $assignments += @{
-                "@odata.type" = "#microsoft.graph.mobileAppAssignment"
-                intent        = "required"
-                target        = @{
-                  "@odata.type" = "#microsoft.graph.groupAssignmentTarget"
-                  groupId       = $gid
-                }
-              }
-            }
-
-            foreach ($gid in @($AssignAvailable)) {
-              if (-not $gid) { continue }
-              $assignments += @{
-                "@odata.type" = "#microsoft.graph.mobileAppAssignment"
-                intent        = "available"
-                target        = @{
-                  "@odata.type" = "#microsoft.graph.groupAssignmentTarget"
-                  groupId       = $gid
-                }
-              }
-            }
-
-            if ($assignments.Count -gt 0) {
-              $payload = @{ assignments = $assignments }
-              $uri = "$GraphBase/deviceAppManagement/mobileApps/$AppId/assign"
-              Invoke-RestMethod -Method POST -Headers $Headers -Uri $uri -Body ($payload | ConvertTo-Json -Depth 10) | Out-Null
-            }
-          }
-
-          # main
-          $token = Get-GraphToken -TenantId $TenantId -ClientId $ClientId -ClientSecret $ClientSecret
-          $Headers = @{
-            Authorization = "Bearer $token"
-            "Content-Type" = "application/json"
-          }
-
-          $rules = New-DetectionRules -Detection $Detection
-
-          $appId = Ensure-Win32App -Headers $Headers -GraphBase $GraphBase -DisplayName $DisplayName `
-            -Publisher $Publisher -Description $Description -InstallCmd $InstallCmd -UninstallCmd $UninstallCmd `
-            -InstallExperience $InstallExperience -RestartBehavior $RestartBehavior -Rules $rules -LogoPath $LogoPath -ReturnCodes $ReturnCodes
-
-          Upload-IntuneWin -Headers $Headers -GraphBase $GraphBase -AppId $appId -IntuneWinPath $IntuneWinPath | Out-Null
-
-          Assign-App -Headers $Headers -GraphBase $GraphBase -AppId $appId -AssignRequired $AssignRequired -AssignAvailable $AssignAvailable
-
-          Write-Host "Uploaded and assigned app '$DisplayName' (Id: $appId)"
-          '@ | Set-Content -Path "$env:RUNNER_TEMP\Publish-Win32ToIntune.ps1" -Encoding UTF8
-
-      - name: Publish to Intune (Graph)
-        shell: pwsh
-        env:
-          INTUNEWIN: ${{ env.INTUNEWIN_PATH }}
-        run: |
-          $params = @{
-            TenantId          = "${{ env.TENANT_ID }}"
-            ClientId          = "${{ env.CLIENT_ID }}"
-            ClientSecret      = "${{ env.CLIENT_SECRET }}"
-            DisplayName       = "${{ matrix.appName }}"
-            IntuneWinPath     = "$env:INTUNEWIN"
-            InstallCmd        = "${{ matrix.installCmd }}"
-            UninstallCmd      = "${{ matrix.uninstallCmd }}"
-            Detection         = "${{ matrix.detection }}"
-            AssignRequired    = @(${{
-              join(matrix.assignRequired, ',')
-            }})
-            AssignAvailable   = @(${{
-              join(matrix.assignAvailable, ',')
-            }})
-            Publisher         = "${{ matrix.publisher }}"
-            Description       = "${{ matrix.description }}"
-            InstallExperience = "${{ matrix.installExperience }}"
-            RestartBehavior   = "${{ matrix.restartBehavior }}"
-            GraphBase         = "${{ env.GRAPH_BASE }}"
-          }
-          if ("${{ matrix.logoPath }}") { $params.LogoPath = (Resolve-Path "${{ matrix.logoPath }}").Path }
-          if ("${{ matrix.returnCodes }}") { $params.ReturnCodes = (${ { toJSON(matrix.returnCodes) } } | ConvertFrom-Json) }
-
-          & "$env:RUNNER_TEMP\Publish-Win32ToIntune.ps1" @params
-
-      - name: Upload packaged artifact
+      - name: Upload artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-            name: ${{ matrix.appName }}.intunewin
-            path: ${{ env.INTUNEWIN_PATH }}
+          name: ${{ matrix.appName }}.intunewin
+          path: ${{ env.INTUNEWIN_PATH }}
+          if-no-files-found: ignore

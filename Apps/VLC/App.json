@@ -1,57 +1,55 @@
 {
-    "PackageInformation": {
-        "SetupType": "EXE",
-        "SetupFile": "Deploy-Application.exe",
-        "SourceFolder": "Source",
-        "OutputFolder": "Package",
-        "IconFile": "Icon.png",
-        "IconURL": ""
-    },
-    "Information": {
-        "DisplayName": "<replaced_by_pipeline>",
-        "AppVersion": "<replaced_by_pipeline>",
-        "Description": "Install VLC",
-        "Publisher": "<replaced_by_pipeline>",
-        "Notes": "",
-        "Owner": "",
-        "ScopeTagName": ""
-    },
-    "Program": {
-        "InstallCommand": "Deploy-Application.exe Install",
-        "UninstallCommand": "Deploy-Application.exe Uninstall",
-        "InstallExperience": "system",
-        "DeviceRestartBehavior": "suppress"
-    },
-    "RequirementRule": {
-        "MinimumSupportedWindowsRelease": "W10_22H2",
-        "Architecture": "x64"
-    },
-    "CustomRequirementRule": [
-    ],
-    "DetectionRule": [
-        {
-            "Type": "MSI",
-            "ProductCode": "<replaced_by_pipeline>",
-            "ProductVersionOperator": "greaterThanOrEqual",
-            "ProductVersion": "<replaced_by_pipeline>"
-        }
-    ],
-    "Assignment": [
-        {
-            "Type": "VirtualGroup",
-            "GroupName": "AllDevices",
-            "Intent": "available",
-            "Notification": "showAll",
-            "UseLocalTime": true,
-            "FilterName": "",
-            "FilterMode": "",
-            "AvailableTime": "",
-            "DeadlineTime": "",
-            "DeliveryOptimizationPriority": "",
-            "EnableRestartGracePeriod": "",
-            "RestartGracePeriodInMinutes": "",
-            "RestartCountDownDisplayInMinutes": "",
-            "RestartNotificationSnoozeInMinutes": ""
-        }
-    ]
+  "PackageInformation": {
+    "SetupType": "MSI",
+    "SetupFile": "Deploy-Application.exe",
+    "SourceFolder": "Source",
+    "OutputFolder": "Package",
+    "Version": "3.0.20",
+    "SourceURL": "https://www.videolan.org/vlc/",
+    "IconFile": "Icon.png"
+  },
+  "Information": {
+    "DisplayName": "VLC Media Player",
+    "AppVersion": "3.0.20",
+    "Description": "VLC is a free and open source cross-platform multimedia player",
+    "Publisher": "VideoLAN",
+    "Developer": "VideoLAN",
+    "CompanyPortalFeaturedApp": "false",
+    "InformationURL": "https://www.videolan.org/vlc/",
+    "PrivacyURL": "https://www.videolan.org/privacy.html",
+    "Notes": "Free multimedia player"
+  },
+  "Program": {
+    "InstallCommand": "Deploy-Application.exe install",
+    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallExperience": "system",
+    "DeviceRestartBehavior": "suppress"
+  },
+  "RequirementRule": {
+    "MinimumRequiredOperatingSystem": "W10_22H2",
+    "Architecture": "x64"
+  },
+  "DetectionRule": [
+    {
+      "DetectionType": "MSI",
+      "ProductCode": "{A78F162C-C289-47DE-A226-087D7D011B84}",
+      "ProductVersionOperator": "greaterThanOrEqual", 
+      "ProductVersion": "3.0.20"
+    }
+  ],
+  "Assignment": [
+    {
+      "Target": "AllUsers",
+      "Intent": "available",
+      "Notification": "showAll",
+      "AvailableTime": "",
+      "DeadlineTime": "",
+      "UseLocalTime": "true",
+      "DeliveryOptimizationPriority": "notConfigured",
+      "EnableRestartGracePeriod": "false",
+      "RestartGracePeriod": "",
+      "RestartCountDownDisplay": "",
+      "RestartNotificationSnooze": ""
+    }
+  ]
 }
