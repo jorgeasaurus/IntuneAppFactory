@@ -1,7 +1,7 @@
 {
   "PackageInformation": {
     "SetupType": "MSI",
-    "SetupFile": "Deploy-Application.exe",
+    "SetupFile": "Invoke-AppDeployToolkit.exe",
     "SourceFolder": "Source",
     "OutputFolder": "Package",
     "Version": "3.0.20",
@@ -20,8 +20,8 @@
     "Notes": "Free multimedia player"
   },
   "Program": {
-    "InstallCommand": "Deploy-Application.exe install",
-    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Install",
+    "UninstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Uninstall",
     "InstallExperience": "system",
     "DeviceRestartBehavior": "suppress"
   },
@@ -33,7 +33,7 @@
     {
       "DetectionType": "MSI",
       "ProductCode": "{A78F162C-C289-47DE-A226-087D7D011B84}",
-      "ProductVersionOperator": "greaterThanOrEqual", 
+      "ProductVersionOperator": "greaterThanOrEqual",
       "ProductVersion": "3.0.20"
     }
   ],

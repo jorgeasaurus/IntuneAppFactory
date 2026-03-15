@@ -103,6 +103,28 @@ jobs:
             }
           }
 
+      - name: Download PSADT v4 framework
+        shell: pwsh
+        run: |
+          $psadtDir = "$env:RUNNER_TEMP\psadt"
+          New-Item -ItemType Directory -Force -Path $psadtDir | Out-Null
+
+          # Install PSAppDeployToolkit module from PSGallery
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Save-Module -Name PSAppDeployToolkit -RequiredVersion 4.1.8 -Path $psadtDir -Force
+          Write-Host "PSAppDeployToolkit module saved to $psadtDir"
+
+          # Download Invoke-AppDeployToolkit.exe from GitHub releases
+          $templateUrl = 'https://github.com/PSAppDeployToolkit/PSAppDeployToolkit/releases/download/4.1.8/PSAppDeployToolkit_Template_v4.zip'
+          $zipPath = "$env:RUNNER_TEMP\psadt_template.zip"
+          Invoke-WebRequest -Uri $templateUrl -OutFile $zipPath -UseBasicParsing
+          Expand-Archive -Path $zipPath -DestinationPath "$env:RUNNER_TEMP\psadt_extract" -Force
+
+          # Copy the frontend exe
+          Copy-Item "$env:RUNNER_TEMP\psadt_extract\Invoke-AppDeployToolkit.exe"        -Destination $psadtDir -Force
+          Copy-Item "$env:RUNNER_TEMP\psadt_extract\Invoke-AppDeployToolkit.exe.config" -Destination $psadtDir -Force -ErrorAction SilentlyContinue
+          Write-Host "PSADT v4.1.8 framework ready at $psadtDir"
+
       - name: Download installer via Evergreen
         if: matrix.appSource == 'Evergreen'
         shell: pwsh
@@ -269,13 +291,16 @@ jobs:
         shell: pwsh
         run: |
           $appFolder = '${{ matrix.appFolder }}'
-          $frameworkSrc = 'Templates/Framework/Source'
+          $psadtDir  = "$env:RUNNER_TEMP\psadt"
 
-          Copy-Item "$frameworkSrc/Deploy-Application.exe"        -Destination $appFolder -Force
-          Copy-Item "$frameworkSrc/Deploy-Application.exe.config" -Destination $appFolder -Force
-          Copy-Item "$frameworkSrc/AppDeployToolkit" -Destination $appFolder -Recurse -Force
+          # Copy Invoke-AppDeployToolkit.exe (v4 .NET 8 frontend)
+          Copy-Item "$psadtDir\Invoke-AppDeployToolkit.exe"        -Destination $appFolder -Force
+          Copy-Item "$psadtDir\Invoke-AppDeployToolkit.exe.config" -Destination $appFolder -Force -ErrorAction SilentlyContinue
 
-          Write-Host "PSADT framework copied to $appFolder"
+          # Copy PSAppDeployToolkit module
+          Copy-Item "$psadtDir\PSAppDeployToolkit" -Destination $appFolder -Recurse -Force
+
+          Write-Host "PSADT v4 framework copied to $appFolder"
 
       - name: Package to .intunewin
         shell: pwsh
@@ -289,7 +314,7 @@ jobs:
           if (-not (Test-Path "$prepDir\IntuneWinAppUtil.exe")) { throw 'Failed to download IntuneWinAppUtil.exe' }
 
           $src = Resolve-Path '${{ matrix.appFolder }}'
-          & "$prepDir\IntuneWinAppUtil.exe" -c $src -s 'Deploy-Application.exe' -o $outDir -q
+          & "$prepDir\IntuneWinAppUtil.exe" -c $src -s 'Invoke-AppDeployToolkit.exe' -o $outDir -q
 
           $intunewin = Get-ChildItem $outDir -Filter '*.intunewin' | Select-Object -First 1
           if (-not $intunewin) { throw 'Packaging failed: no .intunewin produced' }

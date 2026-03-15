@@ -1,7 +1,7 @@
 {
   "PackageInformation": {
     "SetupType": "MSI",
-    "SetupFile": "Deploy-Application.exe",
+    "SetupFile": "Invoke-AppDeployToolkit.exe",
     "SourceFolder": "Source",
     "OutputFolder": "Package",
     "Version": "25.01",
@@ -20,8 +20,8 @@
     "Notes": "File archiver utility"
   },
   "Program": {
-    "InstallCommand": "Deploy-Application.exe install",
-    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Install",
+    "UninstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Uninstall",
     "InstallExperience": "system",
     "DeviceRestartBehavior": "suppress"
   },

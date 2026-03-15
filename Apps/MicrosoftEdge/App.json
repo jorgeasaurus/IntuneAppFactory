@@ -1,7 +1,7 @@
 {
   "PackageInformation": {
     "SetupType": "MSI",
-    "SetupFile": "Deploy-Application.exe",
+    "SetupFile": "Invoke-AppDeployToolkit.exe",
     "IconFile": "Icon.png"
   },
   "Information": {
@@ -13,8 +13,8 @@
     "PrivacyURL": "https://privacy.microsoft.com/"
   },
   "Program": {
-    "InstallCommand": "Deploy-Application.exe install",
-    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Install",
+    "UninstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Uninstall",
     "InstallExperience": "system",
     "DeviceRestartBehavior": "suppress"
   },
@@ -31,6 +31,10 @@
     }
   ],
   "Assignment": [
-    { "Target": "AllUsers", "Intent": "available", "Notification": "showAll" }
+    {
+      "Target": "AllUsers",
+      "Intent": "available",
+      "Notification": "showAll"
+    }
   ]
 }

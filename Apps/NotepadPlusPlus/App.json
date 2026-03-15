@@ -1,7 +1,7 @@
 {
   "PackageInformation": {
     "SetupType": "EXE",
-    "SetupFile": "Deploy-Application.exe",
+    "SetupFile": "Invoke-AppDeployToolkit.exe",
     "SourceFolder": "Source",
     "OutputFolder": "Package",
     "Version": "8.8.3",
@@ -20,8 +20,8 @@
     "Notes": "Free source code editor"
   },
   "Program": {
-    "InstallCommand": "Deploy-Application.exe install",
-    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Install",
+    "UninstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Uninstall",
     "InstallExperience": "system",
     "DeviceRestartBehavior": "suppress"
   },

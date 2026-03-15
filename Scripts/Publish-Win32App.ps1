@@ -627,7 +627,7 @@ Write-Host "[4/6] Creating app..."
 $metadata = Get-IntuneWinMetadata -IntuneWinPath $IntuneWinPath
 $detectionRules = Build-DetectionRules -Rules $config.DetectionRule -AppFolder $AppFolder
 $iconBase64 = Resolve-IconBase64 -AppFolder $AppFolder -IconRef ($config.PackageInformation.IconFile ?? $config.PackageInformation.IconURL)
-$setupFileName = $config.PackageInformation.SetupFile ?? $metadata.SetupFile ?? 'Deploy-Application.exe'
+$setupFileName = $config.PackageInformation.SetupFile ?? $metadata.SetupFile ?? 'Invoke-AppDeployToolkit.exe'
 $intuneWinFileName = $metadata.FileName ?? (Split-Path $IntuneWinPath -Leaf)
 $payload = Build-AppPayload -Config $config -DetectionRules $detectionRules -IconBase64 $iconBase64 -SetupFileName $setupFileName -IntuneWinFileName $intuneWinFileName
 $appId = New-OrUpdateApp -Headers $headers -Payload $payload -BaseName $baseDisplayName

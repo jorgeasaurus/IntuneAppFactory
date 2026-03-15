@@ -221,47 +221,47 @@ Describe 'Build-AppPayload' {
     }
 
     It 'builds correct odata type' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Invoke-AppDeployToolkit.exe" -IntuneWinFileName "Invoke-AppDeployToolkit.intunewin"
         $result.'@odata.type' | Should -Be '#microsoft.graph.win32LobApp'
     }
     It 'sets display name from config' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Invoke-AppDeployToolkit.exe" -IntuneWinFileName "Invoke-AppDeployToolkit.intunewin"
         $result.displayName | Should -Be 'Test App'
     }
     It 'maps install experience' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Invoke-AppDeployToolkit.exe" -IntuneWinFileName "Invoke-AppDeployToolkit.intunewin"
         $result.installExperience.runAsAccount | Should -Be 'system'
     }
     It 'includes standard return codes' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Invoke-AppDeployToolkit.exe" -IntuneWinFileName "Invoke-AppDeployToolkit.intunewin"
         $result.returnCodes.Count | Should -Be 5
         ($result.returnCodes | Where-Object { $_.returnCode -eq 0 }).type | Should -Be 'success'
         ($result.returnCodes | Where-Object { $_.returnCode -eq 3010 }).type | Should -Be 'softReboot'
     }
     It 'sets OS requirement to Graph API ceiling for W10_22H2' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Invoke-AppDeployToolkit.exe" -IntuneWinFileName "Invoke-AppDeployToolkit.intunewin"
         $result.minimumSupportedOperatingSystem.v10_21H1 | Should -Be $true
     }
     It 'sets deviceRestartBehavior when provided' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Invoke-AppDeployToolkit.exe" -IntuneWinFileName "Invoke-AppDeployToolkit.intunewin"
         $result.deviceRestartBehavior | Should -Be 'suppress'
     }
     It 'excludes icon when not provided' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Invoke-AppDeployToolkit.exe" -IntuneWinFileName "Invoke-AppDeployToolkit.intunewin"
         $result.ContainsKey('largeIcon') | Should -Be $false
     }
     It 'includes icon when base64 is provided' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName 'Deploy-Application.exe' -IntuneWinFileName 'Deploy-Application.intunewin' -IconBase64 'AAAA'
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName 'Invoke-AppDeployToolkit.exe' -IntuneWinFileName 'Invoke-AppDeployToolkit.intunewin' -IconBase64 'AAAA'
         $result.largeIcon.value | Should -Be 'AAAA'
         $result.largeIcon.type | Should -Be 'image/png'
     }
     It 'passes detection rules through' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Invoke-AppDeployToolkit.exe" -IntuneWinFileName "Invoke-AppDeployToolkit.intunewin"
         $result.rules.Count | Should -Be 1
     }
     It 'includes setupFilePath from parameter' {
-        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Deploy-Application.exe" -IntuneWinFileName "Deploy-Application.intunewin"
-        $result.setupFilePath | Should -Be 'Deploy-Application.exe'
+        $result = Build-AppPayload -Config $testConfig -DetectionRules $testRules -SetupFileName "Invoke-AppDeployToolkit.exe" -IntuneWinFileName "Invoke-AppDeployToolkit.intunewin"
+        $result.setupFilePath | Should -Be 'Invoke-AppDeployToolkit.exe'
     }
 }
 
@@ -354,6 +354,21 @@ Describe 'App.json validation' {
             $config = Get-Content -Raw (Join-Path $folder.FullName 'App.json') | ConvertFrom-Json
             $config.Program.InstallCommand | Should -Not -BeNullOrEmpty -Because "$($folder.Name) must have InstallCommand"
             $config.Program.UninstallCommand | Should -Not -BeNullOrEmpty -Because "$($folder.Name) must have UninstallCommand"
+        }
+    }
+
+    It 'every App.json uses PSADT v4 commands' {
+        foreach ($folder in $appFolders) {
+            $config = Get-Content -Raw (Join-Path $folder.FullName 'App.json') | ConvertFrom-Json
+            $config.Program.InstallCommand | Should -BeLike '*Invoke-AppDeployToolkit*' -Because "$($folder.Name) must use PSADT v4 Invoke-AppDeployToolkit.exe"
+            $config.Program.UninstallCommand | Should -BeLike '*Invoke-AppDeployToolkit*' -Because "$($folder.Name) must use PSADT v4 Invoke-AppDeployToolkit.exe"
+        }
+    }
+
+    It 'every app folder has Invoke-AppDeployToolkit.ps1' {
+        foreach ($folder in $appFolders) {
+            $script = Join-Path $folder.FullName 'Invoke-AppDeployToolkit.ps1'
+            Test-Path $script | Should -Be $true -Because "$($folder.Name) must have Invoke-AppDeployToolkit.ps1 (PSADT v4)"
         }
     }
 }
