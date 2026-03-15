@@ -7,12 +7,12 @@ IntuneAppFactory automates deploying Win32 applications to Microsoft Intune. A s
 ```
 appList.json ──► GitHub Actions workflow
                    │
-                   ├─ Plan job: builds a matrix entry per app
+                   ├─ Plan job: reads appList.json, validates configs, builds dynamic matrix
                    │
                    └─ Deploy jobs (parallel, one per app):
-                        1. Query source (Evergreen or winget) for latest version
-                        2. Download installer
-                        3. Wrap in PSADT package folder
+                        1. Download installer (Evergreen module or winget, per AppSource)
+                        2. Download app icon from CDN (if IconUrl configured)
+                        3. Copy PSADT framework into app folder
                         4. Package with IntuneWinAppUtil.exe → .intunewin
                         5. Publish to Intune via Graph API (Scripts/Publish-Win32App.ps1)
                         6. Upload .intunewin as workflow artifact
@@ -62,6 +62,7 @@ Go to **Actions → Deploy Win32 Apps to Intune → Run workflow**.
     "AppSource": "Evergreen",
     "AppID": "7zip",
     "AppFolderName": "7zip",
+    "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/7-zip.png",
     "FilterOptions": [
         { "Architecture": "x64", "Type": "msi" }
     ]
@@ -77,29 +78,45 @@ Go to **Actions → Deploy Win32 Apps to Intune → Run workflow**.
     "AppSource": "Winget",
     "AppID": "7zip.7zip",
     "AppFolderName": "7zip",
+    "IconUrl": "https://cdn.jsdelivr.net/gh/selfhst/icons/png/7-zip.png",
     "FilterOptions": [
         { "Architecture": "x64", "Type": "msi", "Scope": "machine" }
     ]
 }
 ```
 
+#### `appList.json` Fields
+
 | Field | Description |
 |---|---|
 | `IntuneAppName` | Display name shown in Intune |
+| `AppPublisher` | Publisher name shown in Intune |
 | `AppSource` | `Evergreen` or `Winget` — determines how the installer is downloaded |
 | `AppID` | Source-specific identifier. Evergreen: run `Find-EvergreenApp`. Winget: run `winget search <name>` |
 | `AppFolderName` | Must match the folder name under `Apps/` |
-| `FilterOptions` | Filter results — shared: `Architecture`, `Type`. Winget-only: `Scope` (`machine`/`user`). Evergreen-only: `Channel`, `Language`, `Stream` |
+| `IconUrl` | *(Optional)* URL to download an app icon PNG for Company Portal |
+| `FilterOptions` | Filter download results — see table below |
+
+#### FilterOptions by Source
+
+| Option | Evergreen | Winget | Example Values |
+|---|---|---|---|
+| `Architecture` | ✅ | ✅ | `x64`, `x86` |
+| `Type` | ✅ | ✅ | `msi`, `exe` |
+| `Channel` | ✅ | — | `Stable`, `LATEST_FIREFOX_VERSION` |
+| `Language` | ✅ | — | `en-US` |
+| `Stream` | ✅ | — | `Current` |
+| `Scope` | — | ✅ | `machine`, `user` |
 
 ### 2. Create the app folder
 
 ```
 Apps/
 └── 7zip/
-    ├── App.json          # App configuration (required)
-    ├── Deploy-Application.ps1   # PSADT install/uninstall logic (required)
-    ├── Icon.png          # App icon for Company Portal (optional)
-    └── Files/            # Created at runtime — installer downloaded here
+    ├── App.json               # Intune app configuration (required)
+    ├── Deploy-Application.ps1 # PSADT install/uninstall logic (required)
+    ├── Icon.png               # App icon for Company Portal (optional)
+    └── Files/                 # Created at runtime — installer downloaded here
 ```
 
 ### 3. Configure `App.json`
@@ -145,8 +162,9 @@ Apps/
 | Type | Key Fields |
 |---|---|
 | **File** | `Path`, `FileOrFolderName`, `FileDetectionType` (`exists`, `version`, `dateModified`, `sizeInMB`) |
-| **Registry** | `KeyPath`, `ValueName`, `DetectionType` (`exists`, `string`, `integer`, `version`) |
-| **MSI** | `ProductCode` (auto-extracted from MSI at packaging time) |
+| **Registry** | `KeyPath`, `ValueName`, `RegistryDetectionType` (`versionComparison`, `stringComparison`, `existence`), `Operator`, `Value` |
+| **MSI** | `ProductCode`, `ProductVersionOperator`, `ProductVersion` |
+| **Script** | `ScriptFile` (path to a `.ps1` in the app folder) |
 
 #### Assignment Targets
 
@@ -164,15 +182,28 @@ Use the standard PSADT template. The key sections are the `Install` and `Uninsta
 
 ```
 ├── .github/workflows/publish.yml   # GitHub Actions workflow
-├── Apps/                            # One subfolder per app
+├── Apps/                            # One subfolder per app (12 included)
 │   ├── 7zip/
+│   ├── CitrixWorkspace/
+│   ├── Git/
+│   ├── GoogleChrome/
+│   ├── KeePassXC/
+│   ├── MicrosoftEdge/
+│   ├── MozillaFirefox/
 │   ├── NotepadPlusPlus/
-│   └── VLC/
+│   ├── PuTTY/
+│   ├── VLC/
+│   ├── VSCode/
+│   └── Zoom/
 ├── Scripts/
 │   └── Publish-Win32App.ps1         # Graph API publishing script (zero dependencies)
-├── Templates/Framework/Source/      # PSADT framework files (shared)
+├── Templates/
+│   ├── Application/                 # App.json + PSADT template for new apps
+│   └── Framework/Source/            # PSADT framework files (shared)
 ├── Tests/
-│   └── Publish-Win32App.Tests.ps1   # Pester tests
+│   └── Publish-Win32App.Tests.ps1   # Pester unit tests
+├── Tools/
+│   └── IntuneWinAppUtil.exe         # Win32 content prep tool
 └── appList.json                     # Master app registry
 ```
 
@@ -180,11 +211,11 @@ Use the standard PSADT template. The key sections are the `Install` and `Uninsta
 
 `Scripts/Publish-Win32App.ps1` is a self-contained PowerShell script with no module dependencies. It handles:
 
-- **Authentication** — Client credentials OAuth2 flow via MSAL
-- **App creation** — Creates Win32LobApp via Graph API with detection rules, OS requirements, and icons
-- **File upload** — Extracts encrypted content from `.intunewin`, uploads via Azure Storage chunked block blobs
+- **Authentication** — Client credentials OAuth2 flow via raw REST (no SDK/MSAL dependency)
+- **App creation** — Creates or replaces Win32LobApp via Graph API with detection rules, OS requirements, and icons
+- **File upload** — Extracts encrypted content from `.intunewin`, uploads via Azure Storage chunked block blobs (6 MB chunks)
 - **Assignments** — Configures user/device/group assignments
-- **Retry logic** — Exponential backoff for throttled or transient Graph API errors
+- **Retry logic** — Exponential backoff for throttled (429) or transient (5xx) Graph API errors
 
 ### Local Usage
 
@@ -195,7 +226,7 @@ Use the standard PSADT template. The key sections are the `Install` and `Uninsta
     -ClientSecret "your-client-secret" `
     -AppFolder    "Apps/7zip" `
     -IntuneWinPath "output/Deploy-Application.intunewin" `
-    -AppVersion   "24.09"
+    -AppVersion   "25.01"
 ```
 
 ## Running Tests
@@ -207,11 +238,20 @@ Invoke-Pester -Path ./Tests -Output Detailed
 
 ## Included Apps
 
-| App | Source | App ID | Detection | Assignment |
-|---|---|---|---|---|
-| 7-Zip | Evergreen | `7zip` | File exists (`7z.exe`) | All Users — Available |
-| Notepad++ | Evergreen | `NotepadPlusPlus` | Registry version check | All Users — Available |
-| VLC | Evergreen | `VideoLanVlcPlayer` | MSI product code | All Users — Available |
+| App | Source | App ID | Type | Detection | Assignment |
+|---|---|---|---|---|---|
+| 7-Zip | Evergreen | `7zip` | MSI | File exists (`7z.exe`) | All Users — Available |
+| Citrix Workspace | Evergreen | `CitrixWorkspaceApp` | EXE | File exists (`wfica32.exe`) | All Users — Available |
+| Git for Windows | Evergreen | `GitForWindows` | EXE | File exists (`git.exe`) | All Users — Available |
+| Google Chrome | Evergreen | `GoogleChrome` | MSI | File exists (`chrome.exe`) | All Users — Available |
+| KeePassXC | Evergreen | `KeePassXCTeamKeePassXC` | MSI | File exists (`KeePassXC.exe`) | All Users — Available |
+| Microsoft Edge | Evergreen | `MicrosoftEdge` | MSI | File exists (`msedge.exe`) | All Users — Available |
+| Mozilla Firefox | Evergreen | `MozillaFirefox` | MSI | File exists (`firefox.exe`) | All Users — Available |
+| Notepad++ | Evergreen | `NotepadPlusPlus` | EXE | Registry version check | All Users — Available |
+| PuTTY | Evergreen | `PuTTY` | MSI | File exists (`putty.exe`) | All Users — Available |
+| VLC Media Player | Evergreen | `VideoLanVlcPlayer` | MSI | MSI product code | All Users — Available |
+| Visual Studio Code | Evergreen | `MicrosoftVisualStudioCode` | EXE | File exists (`Code.exe`) | All Users — Available |
+| Zoom | Evergreen | `Zoom` | MSI | File exists (`Zoom.exe`) | All Users — Available |
 
 ## License
 
