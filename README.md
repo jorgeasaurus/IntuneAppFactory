@@ -1,6 +1,6 @@
 # IntuneAppFactory
 
-IntuneAppFactory automates deploying Win32 applications to Microsoft Intune. A single GitHub Actions workflow detects the latest version of each app via [Evergreen](https://stealthpuppy.com/evergreen/) or [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/), downloads it, wraps it in a [PSADT](https://psappdeploytoolkit.com/) package, and publishes it to Intune — no Azure Storage required.
+IntuneAppFactory automates deploying Win32 applications to Microsoft Intune. A single GitHub Actions workflow detects the latest version of each app via [Evergreen](https://stealthpuppy.com/evergreen/) or [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/), downloads it, wraps it in a [PSAppDeployToolkit v4](https://psappdeploytoolkit.com/) package, and publishes it to Intune — no Azure Storage required.
 
 ## How It Works
 
@@ -11,11 +11,13 @@ appList.json ──► GitHub Actions workflow
                    │
                    └─ Deploy jobs (parallel, one per app):
                         1. Download installer (Evergreen module or winget, per AppSource)
-                        2. Download app icon from CDN (if IconUrl configured)
-                        3. Copy PSADT framework into app folder
-                        4. Package with IntuneWinAppUtil.exe → .intunewin
-                        5. Publish to Intune via Graph API (Scripts/Publish-Win32App.ps1)
-                        6. Upload .intunewin as workflow artifact
+                        2. Download PSADT v4 framework (PSGallery + GitHub releases)
+                        3. Download app icon from CDN (if IconUrl configured)
+                        4. Copy PSADT v4 framework + deploy script into app folder
+                        5. Package with IntuneWinAppUtil.exe → .intunewin
+                        6. Check Intune for existing version (skip if already published)
+                        7. Publish to Intune via Graph API (Scripts/Publish-Win32App.ps1)
+                        8. Upload .intunewin as workflow artifact
 ```
 
 ## Quick Start
@@ -113,10 +115,10 @@ Go to **Actions → Deploy Win32 Apps to Intune → Run workflow**.
 ```
 Apps/
 └── 7zip/
-    ├── App.json               # Intune app configuration (required)
-    ├── Deploy-Application.ps1 # PSADT install/uninstall logic (required)
-    ├── Icon.png               # App icon for Company Portal (optional)
-    └── Files/                 # Created at runtime — installer downloaded here
+    ├── App.json                       # Intune app configuration (required)
+    ├── Invoke-AppDeployToolkit.ps1    # PSADT v4 install/uninstall logic (required)
+    ├── Icon.png                       # App icon for Company Portal (optional)
+    └── Files/                         # Created at runtime — installer downloaded here
 ```
 
 ### 3. Configure `App.json`
@@ -125,7 +127,7 @@ Apps/
 {
   "PackageInformation": {
     "SetupType": "MSI",
-    "SetupFile": "Deploy-Application.exe",
+    "SetupFile": "Invoke-AppDeployToolkit.exe",
     "IconFile": "Icon.png"
   },
   "Information": {
@@ -134,8 +136,8 @@ Apps/
     "Publisher": "Igor Pavlov"
   },
   "Program": {
-    "InstallCommand": "Deploy-Application.exe install",
-    "UninstallCommand": "Deploy-Application.exe uninstall",
+    "InstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Install",
+    "UninstallCommand": "Invoke-AppDeployToolkit.exe -DeploymentType Uninstall",
     "InstallExperience": "system",
     "DeviceRestartBehavior": "suppress"
   },
@@ -174,9 +176,14 @@ Apps/
 | `AllDevices` | Deploy to all devices |
 | Group name | Requires `GroupID` field with the Azure AD group ID |
 
-### 4. Write `Deploy-Application.ps1`
+### 4. Write `Invoke-AppDeployToolkit.ps1`
 
-Use the standard PSADT template. The key sections are the `Install` and `Uninstall` blocks — the framework files are copied from `Templates/Framework/Source` at build time.
+Each app needs a PSADT v4 deploy script. Use the template at `Templates/Application/Invoke-AppDeployToolkit.ps1` as a starting point. The key sections are:
+
+- **`Install-ADTDeployment`** — Install logic using `Start-ADTMsiProcess` (MSI) or `Start-ADTProcess` (EXE)
+- **`Uninstall-ADTDeployment`** — Uninstall logic using `Uninstall-ADTApplication`
+
+The PSADT v4 framework (`Invoke-AppDeployToolkit.exe` and `PSAppDeployToolkit` module) is downloaded at workflow runtime — no framework files are bundled in the repo.
 
 ## Repository Structure
 
@@ -198,12 +205,9 @@ Use the standard PSADT template. The key sections are the `Install` and `Uninsta
 ├── Scripts/
 │   └── Publish-Win32App.ps1         # Graph API publishing script (zero dependencies)
 ├── Templates/
-│   ├── Application/                 # App.json + PSADT template for new apps
-│   └── Framework/Source/            # PSADT framework files (shared)
+│   └── Application/                 # App.json + PSADT v4 template for new apps
 ├── Tests/
-│   └── Publish-Win32App.Tests.ps1   # Pester unit tests
-├── Tools/
-│   └── IntuneWinAppUtil.exe         # Win32 content prep tool
+│   └── Publish-Win32App.Tests.ps1   # Pester unit tests (52 tests)
 └── appList.json                     # Master app registry
 ```
 
@@ -212,8 +216,9 @@ Use the standard PSADT template. The key sections are the `Install` and `Uninsta
 `Scripts/Publish-Win32App.ps1` is a self-contained PowerShell script with no module dependencies. It handles:
 
 - **Authentication** — Client credentials OAuth2 flow via raw REST (no SDK/MSAL dependency)
-- **App creation** — Creates or replaces Win32LobApp via Graph API with detection rules, OS requirements, and icons
-- **File upload** — Extracts encrypted content from `.intunewin`, uploads via Azure Storage chunked block blobs (6 MB chunks)
+- **Version-aware publishing** — Queries Intune by display name; skips if the same version is already published; cleans up older versions before creating a new one
+- **App creation** — Creates Win32LobApp via Graph API with detection rules, OS requirements, and icons
+- **File upload** — Extracts encrypted content from `.intunewin`, uploads via Azure Storage chunked block blobs (6 MB chunks) with automatic SAS token renewal for large files
 - **Assignments** — Configures user/device/group assignments
 - **Retry logic** — Exponential backoff for throttled (429) or transient (5xx) Graph API errors
 
@@ -225,7 +230,7 @@ Use the standard PSADT template. The key sections are the `Install` and `Uninsta
     -ClientId     "your-client-id" `
     -ClientSecret "your-client-secret" `
     -AppFolder    "Apps/7zip" `
-    -IntuneWinPath "output/Deploy-Application.intunewin" `
+    -IntuneWinPath "output/Invoke-AppDeployToolkit.intunewin" `
     -AppVersion   "25.01"
 ```
 
