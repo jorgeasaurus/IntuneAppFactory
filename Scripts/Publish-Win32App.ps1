@@ -348,12 +348,13 @@ function Wait-ForFileState {
 }
 
 function Send-FileContent {
-    param([string] $FilePath, [string] $UploadUri)
+    param([string] $FilePath, [string] $UploadUri, [scriptblock] $RenewCallback)
 
     $chunkSize = 6 * 1024 * 1024
     $fileSize = (Get-Item $FilePath).Length
     $chunkCount = [math]::Ceiling($fileSize / $chunkSize)
     $isoEncoding = [System.Text.Encoding]::GetEncoding('iso-8859-1')
+    $currentUri = $UploadUri
 
     Write-Host "    Uploading file ($fileSize bytes, $chunkCount chunks)..."
 
@@ -371,9 +372,28 @@ function Send-FileContent {
             $bytes = $reader.ReadBytes($length)
             $body = $isoEncoding.GetString($bytes)
 
-            $uri = "$UploadUri&comp=block&blockid=$chunkId"
-            Invoke-WebRequest -Method PUT -Uri $uri -Body $body -UseBasicParsing `
-                -Headers @{ 'Content-Type' = 'text/plain; charset=iso-8859-1'; 'x-ms-blob-type' = 'BlockBlob' } | Out-Null
+            $uri = "$currentUri&comp=block&blockid=$chunkId"
+            $retries = 3
+            for ($attempt = 1; $attempt -le $retries; $attempt++) {
+                try {
+                    Invoke-WebRequest -Method PUT -Uri $uri -Body $body -UseBasicParsing `
+                        -Headers @{ 'Content-Type' = 'text/plain; charset=iso-8859-1'; 'x-ms-blob-type' = 'BlockBlob' } | Out-Null
+                    break
+                }
+                catch {
+                    $isAuthError = $_.Exception.Message -match 'AuthenticationFailed|403|authorized'
+                    if ($isAuthError -and $RenewCallback -and $attempt -lt $retries) {
+                        Write-Warning "    Chunk $($i+1): auth error, renewing SAS URI (attempt $attempt/$retries)..."
+                        $currentUri = & $RenewCallback
+                        $uri = "$currentUri&comp=block&blockid=$chunkId"
+                    }
+                    elseif ($attempt -ge $retries) { throw }
+                    else {
+                        Write-Warning "    Chunk $($i+1): upload error (attempt $attempt/$retries): $_"
+                        Start-Sleep -Seconds (5 * $attempt)
+                    }
+                }
+            }
             Write-Host "    Chunk $($i + 1)/$chunkCount ($length bytes)"
         }
     }
@@ -383,8 +403,22 @@ function Send-FileContent {
     $xml = '<?xml version="1.0" encoding="utf-8"?><BlockList>'
     foreach ($id in $chunkIds) { $xml += "<Latest>$id</Latest>" }
     $xml += '</BlockList>'
-    Invoke-RestMethod -Method PUT -Uri "$UploadUri&comp=blocklist" -Body $xml `
-        -Headers @{ 'Content-Type' = 'text/plain; charset=UTF-8' } | Out-Null
+    $blockListRetries = 3
+    for ($attempt = 1; $attempt -le $blockListRetries; $attempt++) {
+        try {
+            Invoke-RestMethod -Method PUT -Uri "$currentUri&comp=blocklist" -Body $xml `
+                -Headers @{ 'Content-Type' = 'text/plain; charset=UTF-8' } | Out-Null
+            break
+        }
+        catch {
+            if ($_.Exception.Message -match 'AuthenticationFailed|403|authorized' -and $RenewCallback -and $attempt -lt $blockListRetries) {
+                Write-Warning "    Block list commit: auth error, renewing SAS URI (attempt $attempt/$blockListRetries)..."
+                $currentUri = & $RenewCallback
+            }
+            elseif ($attempt -ge $blockListRetries) { throw }
+            else { Start-Sleep -Seconds (5 * $attempt) }
+        }
+    }
 
     Write-Host "    Upload complete ($chunkCount chunks committed)."
 }
@@ -416,7 +450,19 @@ function Upload-IntuneWinFile {
         $fileInfo = Wait-ForFileState -Headers $Headers -AppId $AppId -ContentVersionId $cvId `
             -FileId $fileId -DesiredState 'azureStorageUriRequestSuccess'
 
-        Send-FileContent -FilePath $encryptedPath -UploadUri $fileInfo.azureStorageUri
+        # Build a renewal callback for large uploads where SAS tokens may expire
+        $renewFileUri = "$cvUri/$cvId/files/$fileId/renewUpload"
+        $filesUri = "$cvUri/$cvId/files/$fileId"
+        $capturedHeaders = $Headers
+        $renewCallback = {
+            Invoke-Graph -Headers $capturedHeaders -Method POST -Uri $renewFileUri -Body @{} | Out-Null
+            Start-Sleep -Seconds 5
+            $renewed = Invoke-Graph -Headers $capturedHeaders -Uri $filesUri
+            Write-Host "    SAS URI renewed (new state: $($renewed.uploadState))"
+            return $renewed.azureStorageUri
+        }
+
+        Send-FileContent -FilePath $encryptedPath -UploadUri $fileInfo.azureStorageUri -RenewCallback $renewCallback
 
         Write-Host "  Committing file with encryption info..."
         Write-Host "    encryptionKey length: $($Metadata.EncryptionKey.Length)"

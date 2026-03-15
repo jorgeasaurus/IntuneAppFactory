@@ -389,11 +389,11 @@ Describe 'appList.json validation' {
         }
     }
 
-    It 'each Evergreen entry has Architecture and Type in FilterOptions' {
+    It 'each Evergreen entry has at least one filter property' {
         foreach ($app in @($appList) | Where-Object { $_.AppSource -eq 'Evergreen' }) {
             foreach ($filter in $app.FilterOptions) {
-                $filter.Architecture | Should -Not -BeNullOrEmpty -Because "$($app.IntuneAppName) Evergreen filter needs Architecture"
-                $filter.Type | Should -Not -BeNullOrEmpty -Because "$($app.IntuneAppName) Evergreen filter needs Type"
+                $props = $filter.PSObject.Properties | Where-Object { $_.Value }
+                $props.Count | Should -BeGreaterThan 0 -Because "$($app.IntuneAppName) Evergreen filter should have at least one option"
             }
         }
     }

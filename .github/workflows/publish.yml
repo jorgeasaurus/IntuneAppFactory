@@ -108,23 +108,77 @@ jobs:
         shell: pwsh
         run: |
           Import-Module Evergreen
-          $apps = Get-EvergreenApp -Name '${{ matrix.appId }}'
+          $allApps = Get-EvergreenApp -Name '${{ matrix.appId }}'
 
+          # Diagnostic: show what Evergreen returned
+          Write-Host "--- Evergreen raw output for '${{ matrix.appId }}' ---"
+          Write-Host "Result count: $(@($allApps).Count)"
+          if (@($allApps).Count -gt 0) {
+            $sample = $allApps | Select-Object -First 1
+            Write-Host "Properties: $($sample.PSObject.Properties.Name -join ', ')"
+            $allApps | Select-Object -First 5 | ForEach-Object {
+              Write-Host ($_ | ConvertTo-Json -Compress)
+            }
+          }
+          Write-Host "--- End raw output ---"
+
+          $apps = $allApps
           $arch = '${{ matrix.filterArch }}'
           $type = '${{ matrix.filterType }}'
           $chan = '${{ matrix.filterChan }}'
           $lang = '${{ matrix.filterLang }}'
           $strm = '${{ matrix.filterStrm }}'
-          if ($arch) { $apps = $apps | Where-Object { $_.Architecture -eq $arch } }
-          if ($type) { $apps = $apps | Where-Object { $_.Type -eq $type } }
+
+          # Standard property filtering
           if ($chan) { $apps = $apps | Where-Object { $_.Channel -eq $chan } }
           if ($lang) { $apps = $apps | Where-Object { $_.Language -eq $lang } }
           if ($strm) { $apps = $apps | Where-Object { $_.Stream -eq $strm } }
+
+          # Architecture + Type: try direct properties first, fall back to Platform matching
+          if ($arch -or $type) {
+            $hasArchProp = @($apps | Where-Object { $null -ne $_.Architecture }).Count -gt 0
+            $hasTypeProp = @($apps | Where-Object { $null -ne $_.Type }).Count -gt 0
+            $hasPlatform = @($apps | Where-Object { $null -ne $_.Platform }).Count -gt 0
+
+            if ($hasArchProp -and $arch) {
+              $apps = $apps | Where-Object { $_.Architecture -eq $arch }
+            }
+            if ($hasTypeProp -and $type) {
+              $apps = $apps | Where-Object { $_.Type -eq $type }
+            }
+
+            # Fallback: if direct filters eliminated everything, try Platform matching
+            if (@($apps).Count -eq 0 -and $hasPlatform) {
+              Write-Host "Direct Architecture/Type filter returned 0 results — trying Platform match..."
+              $apps = $allApps
+              if ($chan) { $apps = $apps | Where-Object { $_.Channel -eq $chan } }
+              if ($lang) { $apps = $apps | Where-Object { $_.Language -eq $lang } }
+              if ($strm) { $apps = $apps | Where-Object { $_.Stream -eq $strm } }
+
+              $platformPattern = 'win32'
+              if ($arch) { $platformPattern += "-$($arch.ToLower())" }
+              $apps = $apps | Where-Object { $_.Platform -match $platformPattern -and $_.Platform -notmatch 'user' }
+              if (@($apps).Count -eq 0) {
+                # Also try with -user suffix (user setup is fine too)
+                $apps = $allApps
+                if ($chan) { $apps = $apps | Where-Object { $_.Channel -eq $chan } }
+                if ($lang) { $apps = $apps | Where-Object { $_.Language -eq $lang } }
+                if ($strm) { $apps = $apps | Where-Object { $_.Stream -eq $strm } }
+                $apps = $apps | Where-Object { $_.Platform -match $platformPattern }
+              }
+              Write-Host "Platform fallback found $(@($apps).Count) result(s)"
+            }
+          }
+
           $app = $apps | Sort-Object { try { [version]($_.Version -replace '[^0-9.]','') } catch { [version]'0.0' } } -Descending |
             Select-Object -First 1
 
-          if (-not $app) { throw "No Evergreen result for ${{ matrix.appId }} (arch=$arch, type=$type)" }
-          Write-Host "Found: $($app.Version) -> $($app.URI)"
+          if (-not $app) {
+            Write-Host "::error::No Evergreen result after filtering. Available values:"
+            $allApps | ForEach-Object { Write-Host ($_ | ConvertTo-Json -Compress) }
+            throw "No Evergreen result for ${{ matrix.appId }} (arch=$arch, type=$type, chan=$chan, lang=$lang, strm=$strm)"
+          }
+          Write-Host "Selected: $($app | ConvertTo-Json -Compress)"
 
           $filesDir = Join-Path '${{ matrix.appFolder }}' 'Files'
           New-Item -ItemType Directory -Force -Path $filesDir | Out-Null

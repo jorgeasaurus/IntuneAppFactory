@@ -109,7 +109,6 @@
     "IconUrl": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/citrix.png",
     "FilterOptions": [
       {
-        "Architecture": "x64",
         "Type": "exe",
         "Stream": "Current"
       }
