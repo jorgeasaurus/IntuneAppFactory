@@ -4,6 +4,7 @@
 .DESCRIPTION
     Self-contained script with zero module dependencies. Handles authentication,
     app creation/update, .intunewin file upload, and group assignments.
+    Skips publishing if the same version is already published (use -Force to override).
 .PARAMETER TenantId
     Azure AD tenant ID.
 .PARAMETER ClientId
@@ -14,6 +15,10 @@
     Path to the app folder containing App.json.
 .PARAMETER IntuneWinPath
     Path to the .intunewin file to upload.
+.PARAMETER AppVersion
+    Version string to publish. Overrides the version in App.json and is appended to the display name.
+.PARAMETER Force
+    Re-publish even if the same version already exists in Intune.
 .EXAMPLE
     .\Publish-Win32App.ps1 -TenantId $tid -ClientId $cid -ClientSecret $cs `
         -AppFolder "Apps\7Zip" -IntuneWinPath "output\Deploy-Application.intunewin"
@@ -25,7 +30,8 @@ param(
     [Parameter(Mandatory)] [string] $ClientSecret,
     [Parameter(Mandatory)] [string] $AppFolder,
     [Parameter(Mandatory)] [string] $IntuneWinPath,
-    [string] $AppVersion
+    [string] $AppVersion,
+    [switch] $Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -312,16 +318,45 @@ function Find-ExistingApp {
     return (Invoke-Graph -Headers $Headers -Uri $uri).value | Select-Object -First 1
 }
 
-function New-OrUpdateApp {
-    param([hashtable] $Headers, [hashtable] $Payload)
+function Find-AppsByBaseName {
+    param([hashtable] $Headers, [string] $BaseName)
 
-    $existing = Find-ExistingApp -Headers $Headers -DisplayName $Payload.displayName
-    if ($existing) {
-        Write-Host "  Deleting existing app (state: $($existing.publishingState))..."
-        Invoke-Graph -Headers $Headers -Method DELETE `
-            -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$($existing.id)" | Out-Null
-        Start-Sleep -Seconds 3
+    $escapedName = $BaseName.Replace("'", "''")
+    $filter = "isof('microsoft.graph.win32LobApp') and startswith(displayName, '$escapedName')"
+    $uri = "$script:GraphBase/deviceAppManagement/mobileApps?`$filter=$([uri]::EscapeDataString($filter))"
+    return @((Invoke-Graph -Headers $Headers -Uri $uri).value)
+}
+
+function Compare-VersionStrings {
+    param([string] $Current, [string] $Latest)
+
+    # Normalize version strings to [version] objects for numeric comparison
+    $cleanCurrent = $Current -replace '[^0-9.]', ''
+    $cleanLatest  = $Latest  -replace '[^0-9.]', ''
+    try {
+        $cv = [version]$cleanCurrent
+        $lv = [version]$cleanLatest
+        if ($cv -ge $lv) { return 'current_or_newer' }
+        return 'older'
     }
+    catch {
+        # Fall back to string comparison if version parsing fails
+        if ($cleanCurrent -eq $cleanLatest) { return 'current_or_newer' }
+        return 'unknown'
+    }
+}
+
+function New-OrUpdateApp {
+    param([hashtable] $Headers, [hashtable] $Payload, [string] $BaseName)
+
+    # Remove any old versions of this app (matched by base display name)
+    $existingApps = Find-AppsByBaseName -Headers $Headers -BaseName $BaseName
+    foreach ($old in $existingApps) {
+        Write-Host "  Removing superseded version: $($old.displayName) (state: $($old.publishingState))..."
+        Invoke-Graph -Headers $Headers -Method DELETE `
+            -Uri "$script:GraphBase/deviceAppManagement/mobileApps/$($old.id)" | Out-Null
+    }
+    if ($existingApps.Count -gt 0) { Start-Sleep -Seconds 3 }
 
     Write-Host "  Creating new app..."
     $created = Invoke-Graph -Headers $Headers -Method POST `
@@ -556,32 +591,53 @@ $appJsonPath = Join-Path $AppFolder 'App.json'
 if (-not (Test-Path $appJsonPath)) { throw "App.json not found at $appJsonPath" }
 $config = Get-Content -Raw $appJsonPath | ConvertFrom-Json -AsHashtable
 
+$baseDisplayName = $config.Information.DisplayName
 if ($AppVersion) {
     $config.Information.AppVersion = $AppVersion
-    $config.Information.DisplayName = "$($config.Information.DisplayName) $AppVersion"
+    $config.Information.DisplayName = "$baseDisplayName $AppVersion"
 }
-Write-Host "[1/5] Loaded App.json: $($config.Information.DisplayName)"
+Write-Host "[1/6] Loaded App.json: $($config.Information.DisplayName)"
 
-Write-Host "[2/5] Authenticating..."
+Write-Host "[2/6] Authenticating..."
 $token = Get-GraphToken -TenantId $TenantId -ClientId $ClientId -ClientSecret $ClientSecret
 $headers = @{ Authorization = "Bearer $token" }
 Write-Host "  Token acquired."
 
-Write-Host "[3/5] Creating/updating app..."
+Write-Host "[3/6] Checking for existing version..."
+$existingApps = Find-AppsByBaseName -Headers $headers -BaseName $baseDisplayName
+if ($existingApps.Count -gt 0) {
+    Write-Host "  Found $($existingApps.Count) existing version(s):"
+    foreach ($ea in $existingApps) {
+        Write-Host "    - $($ea.displayName) (state: $($ea.publishingState))"
+    }
+
+    if ($AppVersion -and -not $Force) {
+        $exact = $existingApps | Where-Object { $_.displayName -eq $config.Information.DisplayName }
+        if ($exact -and $exact.publishingState -eq 'published') {
+            Write-Host "`n  '$($config.Information.DisplayName)' is already published — skipping." -ForegroundColor Yellow
+            Write-Host "  Use -Force to re-publish.`n"
+            exit 0
+        }
+    }
+} else {
+    Write-Host "  No existing versions found — first publish."
+}
+
+Write-Host "[4/6] Creating app..."
 $metadata = Get-IntuneWinMetadata -IntuneWinPath $IntuneWinPath
 $detectionRules = Build-DetectionRules -Rules $config.DetectionRule -AppFolder $AppFolder
 $iconBase64 = Resolve-IconBase64 -AppFolder $AppFolder -IconRef ($config.PackageInformation.IconFile ?? $config.PackageInformation.IconURL)
 $setupFileName = $config.PackageInformation.SetupFile ?? $metadata.SetupFile ?? 'Deploy-Application.exe'
 $intuneWinFileName = $metadata.FileName ?? (Split-Path $IntuneWinPath -Leaf)
 $payload = Build-AppPayload -Config $config -DetectionRules $detectionRules -IconBase64 $iconBase64 -SetupFileName $setupFileName -IntuneWinFileName $intuneWinFileName
-$appId = New-OrUpdateApp -Headers $headers -Payload $payload
+$appId = New-OrUpdateApp -Headers $headers -Payload $payload -BaseName $baseDisplayName
 Write-Host "  App ID: $appId"
 
-Write-Host "[4/5] Uploading package..."
+Write-Host "[5/6] Uploading package..."
 Upload-IntuneWinFile -Headers $headers -AppId $appId -IntuneWinPath $IntuneWinPath -Metadata $metadata | Out-Null
 Write-Host "  Upload complete."
 
-Write-Host "[5/5] Configuring assignments..."
+Write-Host "[6/6] Configuring assignments..."
 Set-AppAssignments -Headers $headers -AppId $appId -Assignments $config.Assignment
 Write-Host "`nDone! App '$($config.Information.DisplayName)' published to Intune (ID: $appId)" -ForegroundColor Green
 
